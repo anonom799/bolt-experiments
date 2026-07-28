@@ -25,7 +25,7 @@ import pandas as pd
 import seaborn as sns
 import yaml
 
-from bolt_exp import REPO_ROOT
+from bolt_exp import REPO_ROOT, dedupe_results, load_result
 
 
 LINESTYLE_ALIASES = {
@@ -100,8 +100,7 @@ def _method_label(d: dict) -> str:
 
 def _load_fidelities(path: Path) -> tuple[str, str, list[np.ndarray]]:
     """Return (label, problem, list-of-per-trial fidelity arrays)."""
-    with open(path) as f:
-        d = json.load(f)
+    d = load_result(path)
     label = _method_label(d)
     problem = d.get("problem", "unknown")
     per_trial = []
@@ -216,6 +215,7 @@ def plot_discrete(records: list[dict], out: Path, cfg_order: list[str], cfg_colo
 
     sns.despine()
     fig.tight_layout()
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=150, bbox_inches="tight")
     print(f"Saved {out}")
 
@@ -252,6 +252,7 @@ def plot_continuous(records: list[dict], out: Path, cfg_order: list[str], cfg_co
 
     sns.despine()
     fig.tight_layout()
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=150, bbox_inches="tight")
     print(f"Saved {out}")
 
@@ -275,7 +276,7 @@ def main() -> None:
     cfg_order, cfg_colors, cfg_dashes = _load_config(args.config)
 
     records = []
-    for path in args.files:
+    for path in dedupe_results(args.files):
         label, problem, per_trial = _load_fidelities(path)
         if not per_trial:
             print(f"  Skipping {path.name}: no candidates found")

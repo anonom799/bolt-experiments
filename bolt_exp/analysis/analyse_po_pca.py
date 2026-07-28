@@ -9,9 +9,9 @@ runs two complementary analyses for each PO variant (128 / 256 / 512 / 768):
    are needed to predict y), and per-PC |correlation| with score.
 
 Usage:
-    python analyse_po_pca.py [--save] [--no_show]
+    python analyse_po_pca.py [--save] [--out_dir DIR] [--no_show]
 
-Outputs (saved to the repo root if --save):
+Outputs (written to --out_dir if --save; default: the repo root):
     po_pca_variance.png   — cumulative explained-variance curves (all dims)
     po_pca_r2.png         — cumulative R² curves (supervised)
     po_pca_corr.png       — per-PC |correlation| with score (first 50 PCs)
@@ -108,6 +108,8 @@ def main():
     out_dir = (
         args.out_dir if args.out_dir is not None else REPO_ROOT
     )
+    if args.save:
+        out_dir.mkdir(parents=True, exist_ok=True)
 
     print("Loading dataset…")
     X_full, y = load_data()

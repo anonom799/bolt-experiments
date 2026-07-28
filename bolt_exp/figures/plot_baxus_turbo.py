@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
+from bolt_exp import dedupe_results, load_result
 from bolt_exp.plot_results import _method_label
 
 
@@ -49,8 +50,7 @@ def load_file(path: Path) -> tuple[dict[str, pd.DataFrame], str, str] | None:
         print(f"Skipping {path.name}: no 'baxus' or 'turbo' in filename")
         return None
 
-    with open(path) as f:
-        d = json.load(f)
+    d = load_result(path)
 
     first = d["trials"][0]
     problem = d.get("problem", "unknown")
@@ -127,6 +127,7 @@ def plot_problem(df: pd.DataFrame, ylabel: str, problem: str, args, out_path: Pa
     plt.tight_layout()
 
     if out_path:
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out_path, dpi=150)
         print(f"Saved to {out_path}")
     else:
@@ -136,12 +137,13 @@ def plot_problem(df: pd.DataFrame, ylabel: str, problem: str, args, out_path: Pa
 
 def main():
     args = parse_args()
+    args.files = [str(f) for f in dedupe_results(args.files)]
 
     # group by (problem, metric) -> list of DataFrames
     by_problem_metric: dict[tuple[str, str], list[pd.DataFrame]] = {}
     for f in args.files:
         p = Path(f)
-        if not p.exists():
+        if not p.exists() and not p.with_name(p.name + ".gz").exists():
             print(f"Warning: {f} not found, skipping")
             continue
         result = load_file(p)

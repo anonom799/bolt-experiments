@@ -45,19 +45,23 @@ data/                    raw eval data behind the surrogates, for figures.plot_e
 ```
 
 `bolt_exp.REPO_ROOT` anchors `results/`, `plot_configs/`, `flops/`, `tables/` and `data/`,
-so modules find them regardless of the working directory.
+so modules find them regardless of the working directory. `bolt_exp.load_result` /
+`result_files` / `dedupe_results` are the shared readers every plot and analysis
+goes through; they hide whether a result is stored plain or gzipped.
 
 ### Results
 
 The raw result JSONs behind every number and figure in the paper are committed under `results/` — all 218 of them, plus `results/po_final_regret.csv` (the collated PO regrets that `analysis.po_latex_table` reads). Nothing is withheld.
 
-The 37 largest PO files are stored **gzipped** (`*.json.gz`) to stay under GitHub's per-file size limits. Decompress them once at the repository root before plotting:
+The 37 largest PO files are stored **gzipped** (`*.json.gz`) to stay under GitHub's per-file size limits. No decompression step is needed: every loader goes through `bolt_exp.load_result`, which reads `.json.gz` transparently and falls back from a `.json` path to the `.json.gz` beside it, and the file-collecting analyses (`analysis.collate_po_regret`, `analysis.table_wall_clock`) glob both forms. A fresh clone plots and tabulates the complete set.
+
+To get plain JSON anyway — for inspection or for other tools — decompress at the repository root:
 
 ```bash
 find results -name '*.json.gz' -exec gunzip {} +
 ```
 
-The loaders read plain `.json`, so this step is required; it expands the tree from 1.8 GB to ~4.8 GB.
+That expands the tree from 1.8 GB to ~4.8 GB. Either layout works, including a half-decompressed one: `gunzip -k` leaves both copies in place and the loaders keep the plain `.json`, so a `*.json*` shell glob can't double-count a run.
 
 | Directory | Files | As committed | Extracted |
 |---|---|---|---|
@@ -65,9 +69,11 @@ The loaders read plain `.json`, so this step is required; it expands the tree fr
 | `results/dm/` | 60 | 139 MB | 139 MB |
 | `results/po/` | 78 (37 gzipped) | 1.6 GB | 4.6 GB |
 
-Every run is 5 trials. Main results use 200 iterations; two ablation sweeps are shorter — the multi-fidelity cost-scale grid (`hpo_fd_*`) is 50 iterations at each of three fidelity-cost scales, and the UCB β sweep is 100. Every file carries the full metric set documented under [Result JSON structure](#result-json-structure), so all of them plot directly with `bolt_exp.plot_results`.
+Every run is 5 trials. Main results use 200 iterations; two ablation sweeps are shorter. The multi-fidelity cost-scale grid is 36 files — `hpo_fd_step` and `hpo_fd_model` × 6 acquisition functions × 3 fidelity-cost scales (0.005, 0.01, 0.05) — at 50 iterations each; note that the 200-iteration `hpo_fd_*` main results carry a `cost{c}` tag too, so the grid is identified by `50iterations`. The HPO UCB β sweep is 8 files at 100 iterations (7 β values plus the default-β reference); the DM UCB β sweep runs the full 200.
 
-The PO files dominate the total because each stores the full `(n0 + iterations) × D` candidate matrix at up to 768 dims. They compress well — roughly 5×, which is why only those needed gzipping.
+Every file carries the headline metric — `simple_regret_all` / `log_simple_regret_all` for single-objective, `log_best_hv_diff_true_all` for multi-objective — so all 218 plot directly with `bolt_exp.plot_results`. The seven `runners.test_w_baselines_hpo` runs are model-free and therefore omit the `rec_*` / `*inference_regret*` families; see [Result JSON structure](#result-json-structure).
+
+The PO files dominate the total because each stores the full `(n0 + iterations) × D` candidate matrix at up to 768 dims. They compress well — roughly 6×, which is why only those needed gzipping.
 
 To regenerate rather than reuse: run the `scripts/run_*.sh` drivers, then `scripts/plot_figs.sh`.
 
@@ -263,7 +269,7 @@ Below, `T` = number of BO iterations, `n0` = initial random samples, `D` = input
 | `simple_regret_all` | `T + 1` | `max(f* − max_{i≤t} f_true(x_i), 0)` — noiseless simple regret over all observed inputs; monotonically non-increasing. **Present for all methods.** |
 | `log_simple_regret_all` | `T + 1` | `log(max(f* − max_{i≤t} f_true(x_i), 1e-8))`. **Present for all methods.** |
 
-The `rec_*` / `*inference_regret*` families are absent for `--acq_fn random` (DM SO) and for all baseline runs (`runners.test_w_baselines_hpo`).
+The `rec_*` / `*inference_regret*` families are absent for the baseline runs (`runners.test_w_baselines_hpo`: `random`, `tpe`, `cmaes`, `bohb`, `asha`), which fit no surrogate. `--acq_fn random` in `runners.test_w_botorch_dm` *does* carry them — it fits a GP for the recommendation even though it samples uniformly.
 
 ### DM multi-objective
 
@@ -272,18 +278,18 @@ The `rec_*` / `*inference_regret*` families are absent for `--acq_fn random` (DM
 | `trial`, `seed`, `time_seconds` | scalar | Metadata |
 | `ref_point` | `m` | Fixed reference point for hypervolume computation |
 | `hv_all` | `T + 1` | Dominated hypervolume of noisy observations at each step (index 0 = initial data) |
-| `log_hv_diff_all` | `T + 1` | `log(max_hv − hv)` — log HV regret on noisy observations; available for all methods including `random` |
+| `log_hv_diff_all` | `T + 1` | `log(max_hv − hv)` — log HV regret on noisy observations |
 | `hv_true_all` | `T + 1` | Dominated hypervolume of noiseless `f_true` at all evaluated points (raw, non-monotonic) |
 | `log_hv_diff_true_all` | `T + 1` | `log(max_hv − hv_true)` (non-monotonic) |
 | `best_hv_true_all` | `T + 1` | Running max of `hv_true_all` — monotonically non-decreasing |
 | `log_best_hv_diff_true_all` | `T + 1` | `log(max_hv − best_hv_true)` — monotonically non-increasing |
-| `inf_hv_all` | `T + 1` | Raw inference HV: HV of noiseless `f_true` at the posterior-mean Pareto front. **Absent for `random`.** |
-| `best_inf_hv_all` | `T + 1` | Running max of `inf_hv_all`. **Absent for `random`.** |
-| `log_inference_hv_regret_all` | `T + 1` | `log(max_hv − inf_hv)` (non-monotonic). **Absent for `random`.** |
-| `log_best_inference_hv_regret_all` | `T + 1` | `log(max_hv − best_inf_hv)` — monotonically non-increasing. **Absent for `random`.** |
+| `inf_hv_all` | `T + 1` | Raw inference HV: HV of noiseless `f_true` at the posterior-mean Pareto front. |
+| `best_inf_hv_all` | `T + 1` | Running max of `inf_hv_all`. |
+| `log_inference_hv_regret_all` | `T + 1` | `log(max_hv − inf_hv)` (non-monotonic). |
+| `log_best_inference_hv_regret_all` | `T + 1` | `log(max_hv − best_inf_hv)` — monotonically non-increasing. |
 | `pareto_x_best_hv` / `pareto_y_best_hv` | `P₁ × D` / `P₁ × m` | Non-dominated set (under `f_true`) at the iteration achieving `best_hv_true` |
-| `pareto_x_best_inf_hv` / `pareto_y_best_inf_hv` | `P₂ × D` / `P₂ × m` | Posterior-mean Pareto set at the iteration achieving `best_inf_hv`. **Absent for `random`.** |
-| `pareto_x_inf_hv` / `pareto_y_inf_hv` | `P₃ × D` / `P₃ × m` | Posterior-mean Pareto set at the final step. **Absent for `random`.** |
+| `pareto_x_best_inf_hv` / `pareto_y_best_inf_hv` | `P₂ × D` / `P₂ × m` | Posterior-mean Pareto set at the iteration achieving `best_inf_hv`. |
+| `pareto_x_inf_hv` / `pareto_y_inf_hv` | `P₃ × D` / `P₃ × m` | Posterior-mean Pareto set at the final step. |
 | `candidates` | `(n0 + T) × D` | All evaluated points in order |
 | `seen_y` | `(n0 + T) × m` | All noisy observations in order |
 

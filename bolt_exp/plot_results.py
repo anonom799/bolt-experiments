@@ -19,6 +19,8 @@ import pandas as pd
 import seaborn as sns
 import yaml
 
+from bolt_exp import dedupe_results, load_result
+
 
 YLABEL_MAP = {
     "log_best_hv_diff_true_all": "Log HV Difference",
@@ -112,8 +114,7 @@ def load_results(
     show_cost_scale: bool = False,
 ) -> tuple[pd.DataFrame, str]:
     """Return (DataFrame, metric_key) for any supported result JSON."""
-    with open(path) as f:
-        d = json.load(f)
+    d = load_result(path)
 
     label = _method_label(d, show_cost_scale=show_cost_scale)
     first = d["trials"][0]
@@ -266,13 +267,14 @@ def parse_args():
 
 def main():
     args = parse_args()
+    args.files = [str(p) for p in dedupe_results(args.files)]
     print(args.files)
 
     dfs, metrics = [], []
     for f in args.files:
         p = Path(f)
 
-        if not p.exists():
+        if not p.exists() and not p.with_name(p.name + ".gz").exists():
             print(f"Warning: {f} not found, skipping")
             continue
 
@@ -308,7 +310,7 @@ def main():
     print(last.sort_values("mean").to_string())
     print()
 
-    first_d = json.load(open(args.files[0]))
+    first_d = load_result(args.files[0])
     if args.xlabel:
         xlabel = args.xlabel
     elif args.wall_clock:
@@ -476,6 +478,7 @@ def main():
     plt.tight_layout(pad=0.4)
 
     if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(args.out, dpi=150, bbox_inches="tight", pad_inches=0.08)
         print(f"Saved to {args.out}")
         if cfg_save_legend:

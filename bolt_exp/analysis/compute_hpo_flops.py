@@ -38,7 +38,7 @@ from bolt_exp.hpo_flops import (
 )
 from bolt_exp.plot_results import _method_label
 
-from bolt_exp import REPO_ROOT
+from bolt_exp import REPO_ROOT, load_result
 
 # Categorical column 6, in the order used to one-hot encode it (params.yaml).
 LORA_TARGET_MODULES = [
@@ -94,8 +94,7 @@ def describe_queries(X: torch.Tensor, variant: str) -> pd.DataFrame:
 
 def process_file(path: Path, units: float) -> tuple[pd.DataFrame, dict]:
     """Return the per-query table for one result file and its FLOPs-costed copy."""
-    with open(path) as f:
-        results = json.load(f)
+    results = load_result(path)
 
     variant = infer_variant(path, results)
     label = _method_label(results)
@@ -172,8 +171,7 @@ def common_xmax(paths: list[Path], units: float) -> float:
     """
     smallest = np.inf
     for path in paths:
-        with open(path) as f:
-            results = json.load(f)
+        results = load_result(path)
         variant = infer_variant(path, results)
         n_skip = n_skip_for(results)
         for trial in results["trials"]:

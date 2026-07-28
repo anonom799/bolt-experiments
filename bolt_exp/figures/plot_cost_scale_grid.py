@@ -19,6 +19,7 @@ import pandas as pd
 import seaborn as sns
 import yaml
 
+from bolt_exp import dedupe_results
 from bolt_exp.plot_results import load_results, YLABEL_MAP
 
 
@@ -58,9 +59,9 @@ def main():
     cfg_order = [e["label"] for e in cfg_entries]
 
     dfs, metrics = [], []
-    for f in args.files:
+    for f in dedupe_results(args.files):
         path = Path(f)
-        if not path.exists():
+        if not path.exists() and not path.with_name(path.name + ".gz").exists():
             print(f"Warning: {f} not found, skipping")
             continue
         try:
@@ -150,6 +151,7 @@ def main():
     plt.tight_layout(pad=0.5)
 
     if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(args.out, dpi=150, bbox_inches="tight", pad_inches=0.08)
         print(f"Saved to {args.out}")
     else:

@@ -17,7 +17,7 @@ import yaml
 
 from bolt_exp.plot_results import _method_label
 
-from bolt_exp import REPO_ROOT
+from bolt_exp import REPO_ROOT, load_result, result_files
 
 CONFIG_DIR = REPO_ROOT / "plot_configs"
 
@@ -25,15 +25,14 @@ CONFIG_DIR = REPO_ROOT / "plot_configs"
 # ── file helpers ──────────────────────────────────────────────────────────────
 
 def _load_files(pattern: str, excludes: list[str]) -> list[Path]:
-    files = sorted(Path(".").glob(pattern))
+    files = result_files(pattern)  # matches the gzipped PO copies too
     for ex in excludes:
         files = [f for f in files if not re.search(ex, f.name)]
     return files
 
 
 def _file_stats(path: Path) -> tuple[str, float, int]:
-    with open(path) as fh:
-        d = json.load(fh)
+    d = load_result(path)
     iters = d["iterations"]
     per_step = [t["time_seconds"] / iters for t in d["trials"]]
     return _method_label(d), float(np.mean(per_step)), len(d["trials"])
@@ -279,10 +278,11 @@ def main() -> None:
     parser.add_argument(
         "--out_dir",
         type=Path,
-        default=REPO_ROOT,
-        help="Output directory",
+        default=REPO_ROOT / "tables",
+        help="Output directory (default: tables/, where the paper's copies live)",
     )
     args = parser.parse_args()
+    args.out_dir.mkdir(parents=True, exist_ok=True)
 
     os.chdir(REPO_ROOT)
 

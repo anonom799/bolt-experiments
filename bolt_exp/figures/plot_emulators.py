@@ -625,6 +625,7 @@ def main() -> None:
     out_dir = (
         args.out_dir if args.out_dir is not None else REPO_ROOT
     )
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     # Load problems once to avoid repeated HF hub downloads
     print("Loading emulators...")

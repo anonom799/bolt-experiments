@@ -220,5 +220,6 @@ __marimo__/
 
 # Experiment outputs
 pics/
+results_flops/
 smac3_output/
 .DS_Store

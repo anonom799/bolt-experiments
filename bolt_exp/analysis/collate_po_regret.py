@@ -12,7 +12,7 @@ import re
 import numpy as np
 import pandas as pd
 
-from bolt_exp import REPO_ROOT
+from bolt_exp import REPO_ROOT, dedupe_results, load_result
 
 RESULTS_DIR = REPO_ROOT / "results" / "po"
 OUT_CSV = REPO_ROOT / "results" / "po_final_regret.csv"
@@ -65,7 +65,8 @@ def method_label(d: dict) -> str:
 
 def main() -> None:
     # mirror the shell glob + grep -v mlesi from plot_figs.sh
-    pattern = re.compile(r"^po(128|256|512|768)_.*_200iterations.*\.json$")
+    # `.json.gz` matches too: the large PO results ship compressed
+    pattern = re.compile(r"^po(128|256|512|768)_.*_200iterations.*\.json(\.gz)?$")
 
     if not RESULTS_DIR.is_dir():
         raise SystemExit(
@@ -73,14 +74,12 @@ def main() -> None:
         )
 
     rows = []
-    for path in sorted(RESULTS_DIR.iterdir()):
-        if not pattern.match(path.name):
-            continue
+    candidates = [p for p in RESULTS_DIR.iterdir() if pattern.match(p.name)]
+    for path in sorted(dedupe_results(candidates), key=lambda p: p.name):
         if "mlesi" in path.name:
             continue
 
-        with open(path) as f:
-            d = json.load(f)
+        d = load_result(path)
 
         label = method_label(d)
         if label not in PLOT_METHODS:
@@ -88,7 +87,7 @@ def main() -> None:
 
         trials = d["trials"]
         meta = {
-            "problem": d.get("problem", path.stem.split("_")[0]),
+            "problem": d.get("problem", path.name.split("_")[0]),
             "method": label,
             "last_iteration": d.get("iterations", len(np.array(trials[0][METRIC])) - 1),
             "num_trials": len(trials),

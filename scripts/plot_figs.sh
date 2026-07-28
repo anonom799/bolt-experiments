@@ -31,13 +31,13 @@ for pair in \
     python -m bolt_exp.plot_results $(ls results/dm/dm_curriculum_hetero*_200iterations*.json | grep -v "_em[123]") --out ${OUTDIR}/dm_het${SUFFIX}.pdf --metric $METRIC --no-title --bo-iter --config plot_configs/dm_het_okabe_ito.yaml
 
     # po
-    python -m bolt_exp.plot_results $(ls results/po/po128_*_200iterations*.json | grep -v mlesi) --out ${OUTDIR}/po128${SUFFIX}.pdf --metric $METRIC --no-title --bo-iter --config plot_configs/po128_okabe_ito.yaml
+    python -m bolt_exp.plot_results $(ls results/po/po128_*_200iterations*.json* | grep -v mlesi) --out ${OUTDIR}/po128${SUFFIX}.pdf --metric $METRIC --no-title --bo-iter --config plot_configs/po128_okabe_ito.yaml
 
-    python -m bolt_exp.plot_results $(ls results/po/po256_*_200iterations*.json | grep -v mlesi) --out ${OUTDIR}/po256${SUFFIX}.pdf --metric $METRIC --config plot_configs/po128_okabe_ito.yaml --no-title --bo-iter
+    python -m bolt_exp.plot_results $(ls results/po/po256_*_200iterations*.json* | grep -v mlesi) --out ${OUTDIR}/po256${SUFFIX}.pdf --metric $METRIC --config plot_configs/po128_okabe_ito.yaml --no-title --bo-iter
 
-    python -m bolt_exp.plot_results $(ls results/po/po512_*_200iterations*.json | grep -v mlesi) --out ${OUTDIR}/po512${SUFFIX}.pdf --metric $METRIC --config plot_configs/po128_okabe_ito.yaml --no-title --bo-iter
+    python -m bolt_exp.plot_results $(ls results/po/po512_*_200iterations*.json* | grep -v mlesi) --out ${OUTDIR}/po512${SUFFIX}.pdf --metric $METRIC --config plot_configs/po128_okabe_ito.yaml --no-title --bo-iter
 
-    python -m bolt_exp.plot_results $(ls results/po/po768_*_200iterations*.json | grep -v mlesi) --out ${OUTDIR}/po768${SUFFIX}.pdf --metric $METRIC --config plot_configs/po128_okabe_ito.yaml --no-title --bo-iter
+    python -m bolt_exp.plot_results $(ls results/po/po768_*_200iterations*.json* | grep -v mlesi) --out ${OUTDIR}/po768${SUFFIX}.pdf --metric $METRIC --config plot_configs/po128_okabe_ito.yaml --no-title --bo-iter
 
     # hpo legend
     python -m bolt_exp.plot_results $(ls results/hpo/hpo_*_200iterations*.json | grep -v _fd_ | grep -v _beta1_ | grep -v '_beta[2,5,3]') --out ${OUTDIR}/hpo_long.pdf --metric $METRIC --config plot_configs/hpo_legend_okabe_ito.yaml --no-title
@@ -52,7 +52,7 @@ for pair in \
     rm ${OUTDIR}/dm_het_long.pdf
 
     # po legend
-    python -m bolt_exp.plot_results results/po/po128_*_200iterations*.json --out ${OUTDIR}/po128_long.pdf --metric $METRIC --bo-iter --config plot_configs/po128_legend_okabe_ito.yaml
+    python -m bolt_exp.plot_results results/po/po128_*_200iterations*.json* --out ${OUTDIR}/po128_long.pdf --metric $METRIC --bo-iter --config plot_configs/po128_legend_okabe_ito.yaml
     rm ${OUTDIR}/po128_long.pdf ${OUTDIR}/po*${SUFFIX}_legend.pdf
 
 done
@@ -60,8 +60,7 @@ done
 
 # po pca
 
-python -m bolt_exp.analysis.analyse_po_pca  --save --no_show
-mv po_pca_variance_standalone.pdf pics/.
+python -m bolt_exp.analysis.analyse_po_pca --save --no_show --out_dir pics
 
 # for app
 

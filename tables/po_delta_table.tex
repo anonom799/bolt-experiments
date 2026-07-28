@@ -1,0 +1,18 @@
+\begin{table}[h]
+\centering
+\caption{Paired delta in \texttt{log\_simple\_regret\_all} at iteration 200 vs LogNEI baseline (mean $\pm$ std over 5 seeds). Negative = improvement (lower log regret).}
+\label{tab:po_deltas}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Enhancement} & \textbf{PO128} & \textbf{PO256} & \textbf{PO512} & \textbf{PO768} \\
+\midrule
+\texttt{q=5} & $-8.67 \pm 7.75$ & $-8.23 \pm 7.61$ & $-8.40 \pm 7.54$ & $-8.85 \pm 7.67$ \\
+\texttt{TuRBO} & $-5.87 \pm 7.55$ & $-10.61 \pm 7.10$ & $-5.12 \pm 7.78$ & $-5.67 \pm 7.67$ \\
+\texttt{TuRBO+q=5} & $-14.05 \pm 0.63$$^\dagger$ & $-13.61 \pm 0.46$$^\dagger$ & $-13.78 \pm 0.41$$^\dagger$ & $-14.09 \pm 0.87$$^\dagger$ \\
+\texttt{BAxUS} & $-0.43 \pm 1.09$ & $-2.27 \pm 6.57$ & $-10.82 \pm 6.72$ & $-5.99 \pm 7.38$ \\
+\texttt{BAxUS+q=5} & $-8.61 \pm 6.88$ & $-13.61 \pm 0.46$$^\dagger$ & $-13.78 \pm 0.41$$^\dagger$ & $-14.09 \pm 0.87$$^\dagger$ \\
+\bottomrule
+\end{tabular}
+\vspace{0.5em}
+{\footnotesize $^\dagger$ All 5 seeds hit the log-regret floor ($\approx -18.42$); deltas coincide with those of \texttt{TuRBO+q=5} as both methods fully floor out.}
+\end{table}

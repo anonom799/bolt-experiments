@@ -1,0 +1,26 @@
+# The benchmark suite itself
+bolt-bench @ git+https://github.com/anonom799/bolt.git
+
+# BO / modelling
+botorch>=0.16.1
+gpytorch
+torch>=2.9.1
+numpy>=2.2.0
+scipy
+scikit-learn
+
+# Baselines
+optuna              # TPE, ASHA
+smac>=2.0           # BOHB
+pymoo               # NSGA-II / NSGA-III
+
+# Data / IO
+pandas
+datasets
+huggingface_hub>=0.36.0
+pyyaml
+
+# Plotting / CLI
+matplotlib
+seaborn
+rich

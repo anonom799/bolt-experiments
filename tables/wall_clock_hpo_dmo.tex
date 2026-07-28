@@ -1,0 +1,115 @@
+\begin{table}[h]
+  \centering
+  \caption{Mean wall-clock time per BO step --- HPO and data mixture problems.}
+  \label{tab:wall_clock_hpo_dmo}
+  \begin{subtable}[t]{0.48\textwidth}
+    \centering
+    \footnotesize
+    \caption{\textbf{HPO}}
+    \begin{tabular}{lr}
+      \toprule
+      \textbf{Method} & \textbf{Time\,/\,step} \\
+      \midrule
+      \multicolumn{2}{l}{\textit{HPO}} \\
+      \cmidrule{1-2}
+      RANDOM & 0.00186\,s \\
+      TS & 10.8\,s \\
+      TPE & 0.0113\,s \\
+      LogEI & 13.5\,s \\
+      LogNEI & 12.9\,s \\
+      UCB & 12.5\,s \\
+      UCB(beta=10.0) & 12.8\,s \\
+      PES & 16.3\,s \\
+      MES & 17\,s \\
+      GIBBON & 14.6\,s \\
+      JES & 17.1\,s \\
+      UCB(beta=1.0) & 5.21\,s \\
+      UCB(beta=2.0) & 7.83\,s \\
+      UCB(beta=30.0) & 13.8\,s \\
+      UCB(beta=5.0) & 10.7\,s \\
+      \midrule
+      \multicolumn{2}{l}{\textit{HPO-FD-Step}} \\
+      \cmidrule{1-2}
+      RANDOM & 0.00654\,s \\
+      BOHB & 0.665\,s \\
+      LogEI & 17.6\,s \\
+      LogNEI & 15.8\,s \\
+      UCB & 22\,s \\
+      MF-MES & 15.8\,s \\
+      MF-GIBBON & 13.6\,s \\
+      \midrule
+      \multicolumn{2}{l}{\textit{HPO-FD-Model}} \\
+      \cmidrule{1-2}
+      RANDOM & 0.00525\,s \\
+      ASHA & 0.0175\,s \\
+      LogEI & 16.4\,s \\
+      LogNEI & 12.6\,s \\
+      UCB & 24.5\,s \\
+      PES & 41.7\,s \\
+      MF-MES & 29.4\,s \\
+      MF-GIBBON & 18.5\,s \\
+      \bottomrule
+    \end{tabular}
+  \end{subtable}
+  \hfill
+  \begin{subtable}[t]{0.48\textwidth}
+    \centering
+    \footnotesize
+    \caption{\textbf{DMO}}
+    \begin{tabular}{lr}
+      \toprule
+      \textbf{Method} & \textbf{Time\,/\,step} \\
+      \midrule
+      \multicolumn{2}{l}{\textit{DM}} \\
+      \cmidrule{1-2}
+      RANDOM & 0.00509\,s \\
+      TS & 2.02\,s \\
+      KG & 21\,s \\
+      LogEI & 3.7\,s \\
+      LogNEI & 5.53\,s \\
+      LogNEI(q=5) & 17.1\,s \\
+      LogNEI(q=10) & 1.8\,min \\
+      UCB & 3.1\,s \\
+      UCB(beta=2.0) & 3.15\,s \\
+      PES & 7.03\,s \\
+      MES & 3.31\,s \\
+      MES(q=5) & 7.83\,s \\
+      MES(q=10) & 14.5\,s \\
+      GIBBON & 3.17\,s \\
+      GIBBON(q=5) & 21.4\,s \\
+      GIBBON(q=10) & 52.8\,s \\
+      JES & 4.1\,s \\
+      \midrule
+      \multicolumn{2}{l}{\textit{DM-MO}} \\
+      \cmidrule{1-2}
+      RANDOM & 0.0246\,s \\
+      TSEMO & 2.35\,s \\
+      NSGA2(pop\_size=50) & 8.78\,s \\
+      ParEGO & 4.65\,s \\
+      ParEGO(q=5) & 19.3\,s \\
+      NEHVI & 1.35\,min \\
+      NEHVI(q=5) & 6.33\,min \\
+      PES\_MO & 16.6\,s \\
+      MES\_MO & 9.14\,s \\
+      MES\_MO(q=5) & 53\,s \\
+      JES\_MO & 12.8\,s \\
+      \midrule
+      \multicolumn{2}{l}{\textit{DM-Het}} \\
+      \cmidrule{1-2}
+      RANDOM & 0.00541\,s \\
+      TS & 2.03\,s \\
+      KG & 25.2\,s \\
+      LogEI & 3.44\,s \\
+      LogNEI & 6.59\,s \\
+      LogNEI+KN & 5.98\,s \\
+      LogNEI+MLHGP(em=5) & 7.69\,s \\
+      UCB & 2.96\,s \\
+      UCB(beta=2.0) & 3.38\,s \\
+      PES & 4.38\,s \\
+      MES & 3.11\,s \\
+      GIBBON & 2.92\,s \\
+      JES & 4.42\,s \\
+      \bottomrule
+    \end{tabular}
+  \end{subtable}
+\end{table}

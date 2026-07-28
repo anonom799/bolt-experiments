@@ -1,0 +1,304 @@
+# Bolt Experiments
+
+Experiment and analysis scripts reproducing the paper's results on [`bolt`](https://github.com/anonom799/bolt), a benchmark suite for Bayesian optimization of expensive LLM tasks.
+
+Every runner writes a JSON file in a shared output format, so results are directly comparable across methods and can be plotted by the same `bolt_exp.plot_results`.
+
+Related repos:
+
+- [`bolt`](https://github.com/anonom799/bolt) — the benchmark suite (surrogate-backed problems)
+- [`bolt-data`](https://github.com/anonom799/bolt-data) — data collection and surrogate training
+
+---
+
+## Install
+
+```bash
+pip install -r requirements.txt
+```
+
+`bolt-bench` pulls its surrogates from the HuggingFace Hub on first use; no local data is needed to run the optimizers.
+
+`figures.plot_emulators` plots surrogate diagnostics against the raw eval data those surrogates were fit to. That data (~850 KB, held-out val sets plus the DM Pareto front and noise targets) is committed under `data/`, so the figure script needs no extra setup. Override the defaults with its `--*_path` flags to point at your own collection runs.
+
+---
+
+## Layout
+
+Everything is invoked as a module from the **repository root**:
+`python -m bolt_exp.<subpackage>.<module>`.
+
+```
+bolt_exp/
+├── plot_results.py      plotting library + CLI, shared by the figure scripts
+├── hpo_flops.py         the training-FLOPs formula and its derivation
+├── mlhgp.py             Most Likely Heteroscedastic GP (Kersting et al., 2007)
+├── runners/             BO runners; each writes a result JSON
+├── analysis/            analyses, FLOPs accounting, LaTeX tables
+└── figures/             paper figures
+scripts/                 shell drivers for the full sweeps and figure sets
+plot_configs/            per-figure plot styling (colors, labels, ordering)
+results/{hpo,dm,po}/     experiment output JSONs (large ones ship gzipped; runners write here)
+flops/                   per-query and per-method FLOPs accounting (CSV)
+tables/                  generated LaTeX tables used in the paper
+data/                    raw eval data behind the surrogates, for figures.plot_emulators
+```
+
+`bolt_exp.REPO_ROOT` anchors `results/`, `plot_configs/`, `flops/`, `tables/` and `data/`,
+so modules find them regardless of the working directory.
+
+### Results
+
+The raw result JSONs behind every number and figure in the paper are committed under `results/` — all 218 of them, plus `results/po_final_regret.csv` (the collated PO regrets that `analysis.po_latex_table` reads). Nothing is withheld.
+
+The 37 largest PO files are stored **gzipped** (`*.json.gz`) to stay under GitHub's per-file size limits. Decompress them once at the repository root before plotting:
+
+```bash
+find results -name '*.json.gz' -exec gunzip {} +
+```
+
+The loaders read plain `.json`, so this step is required; it expands the tree from 1.8 GB to ~4.8 GB.
+
+| Directory | Files | As committed | Extracted |
+|---|---|---|---|
+| `results/hpo/` | 80 | 73 MB | 73 MB |
+| `results/dm/` | 60 | 139 MB | 139 MB |
+| `results/po/` | 78 (37 gzipped) | 1.6 GB | 4.6 GB |
+
+Every run is 5 trials. Main results use 200 iterations; two ablation sweeps are shorter — the multi-fidelity cost-scale grid (`hpo_fd_*`) is 50 iterations at each of three fidelity-cost scales, and the UCB β sweep is 100. Every file carries the full metric set documented under [Result JSON structure](#result-json-structure), so all of them plot directly with `bolt_exp.plot_results`.
+
+The PO files dominate the total because each stores the full `(n0 + iterations) × D` candidate matrix at up to 768 dims. They compress well — roughly 5×, which is why only those needed gzipping.
+
+To regenerate rather than reuse: run the `scripts/run_*.sh` drivers, then `scripts/plot_figs.sh`.
+
+---
+
+## Problems
+
+### HPO
+
+| Problem | Fidelity | Dims | Description |
+|---|---|---|---|
+| `hpo` | None (single-fidelity) | 10 | Qwen3-8B LoRA fine-tuning HPO at full training budget |
+| `hpo_fd_step` | Continuous ∈ [0, 1] | 11 | Same task; fidelity = normalised training token count (1e5–9e6 tokens) |
+| `hpo_fd_model` | Discrete ∈ {0, 1} | 11 | Same task; fidelity = model size (0 = Qwen3-8B, 1 = Qwen3-3B) |
+
+Budget cost per evaluation: `0.1 + 0.9 × fidelity` (fidelity = 1.0 for single-fidelity).
+
+### Data Mixture (DM)
+
+| Problem | Type | Dims | Description |
+|---|---|---|---|
+| `dm_curriculum` | Single-objective | 6 | Data mixture selection; two 3-simplex groups; maximise a scalar LLM metric |
+| `dm_curriculum_mo` | Multi-objective | 6 | Same; three objectives evaluated jointly |
+| `dm_curriculum_heteroscedastic` | Single-objective, heteroscedastic | 6 | Same with input-dependent observation noise from a learned noise emulator |
+
+### Prompt Optimization (PO)
+
+| Problem | Type | Dims | Description |
+|---|---|---|---|
+| `po128` / `po256` / `po512` / `po768` | Discrete candidate set | 128–768 | Nearest-neighbour lookup over 5014 tabular prompt embeddings, scored by MATH500 0-shot accuracy on Qwen3-14B |
+
+---
+
+## Methods by Problem
+
+### DM curriculum — single-objective (`dm_curriculum`)
+
+| Script | Method flag | Algorithm |
+|---|---|---|
+| `runners.test_w_botorch_dm` | `--acq_fn ei/ucb/kg/mes/gibbon/pes/jes/ts/qnei` | GP-BO (BoTorch); simplex equality constraints via `optimize_acqf` |
+| `runners.test_w_botorch_dm` | `--acq_fn random` | Uniform Dirichlet baseline |
+
+### DM curriculum — multi-objective (`dm_curriculum_mo`)
+
+| Script | Method flag | Algorithm |
+|---|---|---|
+| `runners.test_w_botorch_dm` | `--acq_fn qnehvi/qparego/qhvkg/jes_mo/mes_mo/pes_mo` | MO GP-BO (BoTorch); ModelListGP with one GP per objective |
+| `runners.test_w_botorch_dm` | `--acq_fn random` | Uniform Dirichlet baseline (no model) |
+| `runners.test_w_baselines_mo` | `--method tsemo` | TSEMO — Thompson-sampling MO baseline |
+| `runners.test_w_baselines_mo` | `--method nsga2/nsga3` | Evolutionary MO baselines (pymoo), simplex-repaired |
+
+### DM curriculum — heteroscedastic (`dm_curriculum_heteroscedastic`)
+
+| Script | Method flag | Algorithm |
+|---|---|---|
+| `runners.test_w_botorch_dm` | `--known_noise` | Known-noise GP; conditions on the emulator's noise variances |
+| `runners.test_w_botorch_dm` | `--mlhgp` | MLHGP (Kersting et al.); learns input-dependent noise via EM |
+
+### Single-fidelity HPO (`hpo`)
+
+| Script | Method flag | Algorithm | Description |
+|---|---|---|---|
+| `runners.test_w_botorch_mixed` | `--acq_fn ucb/ei/kg/pes` | GP-BO (BoTorch) | Gaussian process surrogate with acquisition function optimization. Handles mixed discrete/continuous space via `optimize_acqf_mixed`. |
+| `runners.test_w_baselines_hpo` | `--method random` | Random Search | Uniform random sampling over the full search space. |
+| `runners.test_w_baselines_hpo` | `--method tpe` | TPE (Optuna) | Tree-structured Parzen Estimator; models good/bad regions independently and samples from the good region. |
+
+### Multi-fidelity HPO — continuous fidelity (`hpo_fd_step`)
+
+| Script | Method flag | Algorithm | Description |
+|---|---|---|---|
+| `runners.test_w_botorch_mixed` | `--acq_fn ucb/ei/kg/pes` | GP-BO (BoTorch) | GP surrogate including fidelity as a continuous input. |
+| `runners.test_w_baselines_hpo` | `--method random` | Random Search | Randomly samples fidelity alongside HPs; budget-matched baseline for fair comparison with BOHB. |
+| `runners.test_w_baselines_hpo` | `--method bohb` | BOHB (SMAC3) | Bayesian optimization and HyperBand. Uses a KDE surrogate with HyperBand scheduling across continuous budgets (rungs at ~10 %, 33 %, 100 % of max fidelity). |
+
+### Multi-fidelity HPO — discrete fidelity (`hpo_fd_model`)
+
+| Script | Method flag | Algorithm | Description |
+|---|---|---|---|
+| `runners.test_w_botorch_mixed` | `--acq_fn ucb/ei/kg/pes` | GP-BO (BoTorch) | GP surrogate with discrete fidelity as an additional dimension. |
+| `runners.test_w_baselines_hpo` | `--method random` | Random Search | Randomly samples fidelity ∈ {0, 1}; budget-matched baseline for fair comparison with ASHA. |
+| `runners.test_w_baselines_hpo` | `--method asha` | ASHA (Optuna) | Asynchronous Successive Halving. Evaluates all configs at fidelity 0 (cheap), promotes survivors to fidelity 1 (expensive). Uses `SuccessiveHalvingPruner`. |
+
+### Prompt optimization (`po128` … `po768`)
+
+| Script | Method flag | Algorithm |
+|---|---|---|
+| `runners.test_w_botorch_po` | `--acq_fn ei/qnei/ucb/kg/mes/gibbon/pes/jes/ts/random` | GP-BO over the discrete candidate set via `optimize_acqf_discrete` |
+| `runners.test_w_botorch_po` | `--turbo` | TuRBO trust-region filtering |
+| `runners.test_w_botorch_po` | `--baxus` | BAxUS random subspace embedding, expanding on stagnation |
+| `runners.test_w_botorch_po` | `--saasbo` | SAASBO — fully Bayesian GP with SAAS horseshoe prior (NUTS) |
+| `runners.test_w_botorch_po` | `--raasp` / `--msr` / `--mle_scaled_init` | High-dimensional candidate generation and lengthscale-init variants |
+
+---
+
+## Usage Examples
+
+```bash
+# DM — single-objective
+python -m bolt_exp.runners.test_w_botorch_dm --problem dm_curriculum --acq_fn ei --iterations 100 --trials 3
+
+# DM — multi-objective
+python -m bolt_exp.runners.test_w_botorch_dm --problem dm_curriculum_mo --acq_fn qnehvi --iterations 100 --trials 3
+
+# HPO — GP-BO (BoTorch)
+python -m bolt_exp.runners.test_w_botorch_mixed --problem hpo --acq_fn ucb --iterations 100 --trials 3
+python -m bolt_exp.runners.test_w_botorch_mixed --problem hpo_fd_step --acq_fn ucb --iterations 100 --trials 3
+python -m bolt_exp.runners.test_w_botorch_mixed --problem hpo_fd_model --acq_fn ucb --iterations 100 --trials 3
+
+# HPO — baselines
+python -m bolt_exp.runners.test_w_baselines_hpo --problem hpo --method tpe --iterations 100 --trials 3
+python -m bolt_exp.runners.test_w_baselines_hpo --problem hpo_fd_step --method bohb --iterations 100 --trials 3
+python -m bolt_exp.runners.test_w_baselines_hpo --problem hpo_fd_model --method asha --iterations 100 --trials 3
+
+# PO
+python -m bolt_exp.runners.test_w_botorch_po --problem po128 --acq_fn qnei --iterations 100 --trials 3
+python -m bolt_exp.runners.test_w_botorch_po --problem po768 --acq_fn ts --turbo --iterations 100 --trials 3
+
+# Full sweeps (as used in the paper)
+bash scripts/run_botorch_dm.sh
+bash scripts/run_botorch_mixed.sh
+bash scripts/run_botorch_po.sh
+```
+
+Results are saved to `results/{hpo,dm,po}/`. Every filename carries `{problem}_{method}` and `{trials}trials_{iterations}iterations`, with method-variant tags in between or after depending on the runner:
+
+| Runner | Pattern |
+|---|---|
+| `test_w_botorch_po` | `{problem}_{acq_fn}[_turbo\|_baxus\|_saasbo][_raasp\|_msr][_mlesi][_beta{β}][_q{Q}]_{trials}trials_{iterations}iterations_results.json` |
+| `test_w_botorch_dm` | `{problem}_{acq_fn}[_beta{β}][_mlhgp_em{N}][_knownnoise][_q{Q}]_{trials}trials_{iterations}iterations_results.json` |
+| `test_w_botorch_mixed` | `{problem}_{acq_fn}_{trials}trials_{iterations}iterations[_cost{c}][_beta{β}]_results.json` |
+| `test_w_baselines_hpo` / `_mo` | `{problem}_{method}_{trials}trials_{iterations}iterations_results.json` |
+
+`mlesi` is `--mle_scaled_init`; `q{Q}` appears only for batch size > 1; `cost{c}` is the multi-fidelity cost scale. Examples: `po128_qnei_turbo_mlesi_q5_5trials_200iterations_results.json`, `dm_curriculum_ucb_beta1.0_5trials_200iterations_results.json`, `hpo_fd_step_mfmes_5trials_50iterations_cost0.01_results.json`.
+
+---
+
+## Plotting and analysis
+
+```bash
+# Regenerate all paper figures into pics/
+bash scripts/plot_figs.sh
+
+# FLOPs-costed variants of the HPO figures
+bash scripts/plot_figs_flops.sh
+
+# A single figure
+python -m bolt_exp.plot_results results/dm/*200iterations*.json \
+    --out dm_simple.pdf --metric log_simple_regret_all \
+    --bo-iter --config plot_configs/dm_okabe_ito.yaml
+```
+
+Headline metrics: `log_simple_regret_all` for single-objective problems, `log_best_hv_diff_true_all` for multi-objective.
+
+| Script | Purpose |
+|---|---|
+| `bolt_exp.plot_results` | Main regret / hypervolume curves |
+| `figures.plot_emulators` | Surrogate diagnostics (landscape, predicted-vs-actual, Pareto front) |
+| `figures.plot_fidelity_proportions` | Fidelity usage over the multi-fidelity runs |
+| `figures.plot_baxus_turbo`, `figures.plot_cost_scale_grid` | PO ablations, HPO cost-scale grid |
+| `analysis.compute_hpo_flops`, `bolt_exp.hpo_flops`, `analysis.flops_table` | FLOPs accounting; writes `flops/` |
+| `analysis.collate_po_regret`, `analysis.po_latex_table`, `analysis.table_wall_clock` | `analysis.collate_po_regret` writes `po_final_regret.csv`, which `analysis.po_latex_table` turns into `tables/po_delta_table.tex`; `analysis.table_wall_clock` writes the wall-clock tables |
+| `analysis.find_optimal` | Locate a problem's optimum by grid search + local refinement (how the reference optima behind the regret metrics were obtained) |
+| `analysis.analyse_po_pca`, `analysis.analyse_dm_curriculum` | Analyses reported in the appendix |
+
+
+---
+
+## Result JSON structure
+
+**Common top-level keys:** `acq_fn` / `method`, `iterations`, `initial_random_samples`, `num_trials`, `trials`. `problem` is present in every runner's output except `runners.test_w_botorch_mixed`. `runners.test_w_botorch_dm` additionally includes: `batch_size`, `ucb_beta` (SO UCB only, else `null`), `known_noise` (bool), `mlhgp` (bool), `mlhgp_em_iter` (`null` unless `--mlhgp`). `runners.test_w_baselines_mo` includes `pop_size` for the evolutionary baselines.
+
+Below, `T` = number of BO iterations, `n0` = initial random samples, `D` = input dims, `m` = number of objectives.
+
+### Single-objective (HPO, DM SO)
+
+| Key | Length | Description |
+|---|---|---|
+| `trial`, `seed`, `time_seconds` | scalar | Metadata |
+| `best_y_all` | `T + 1` | Best noisy objective seen so far (index 0 = initial data) |
+| `candidates` | `(n0 + T) × D` | All evaluated points in order |
+| `seen_y` | `n0 + T` | All noisy observations in order |
+| `rec_x_all` | `(T + 1) × D` | Posterior mean argmax; index 0 = initial fit before first BO step |
+| `rec_true_all` | `T + 1` | Noiseless `f_true` at `rec_x` |
+| `best_rec_true_all` | `T + 1` | Cumulative max of `rec_true_all` (running best recommendation) |
+| `inference_regret_all` | `T + 1` | `optimal − rec_true` — raw per-step inference regret (non-monotonic) |
+| `log_inference_regret_all` | `T + 1` | `log(max(optimal − rec_true, 1e-8))` |
+| `best_inference_regret_all` | `T + 1` | `max(optimal − best_rec_true, 0)` — monotonically non-increasing |
+| `log_best_inference_regret_all` | `T + 1` | `log(max(optimal − best_rec_true, 1e-8))` — monotonically non-increasing |
+| `best_obs_x_all` | `T + 1` | Best-seen point (argmax of noisy `train_y`) at each step |
+| `best_obs_true_all` | `T + 1` | Noiseless `f_true` at `best_obs_x`; the point is selected by noisy `train_y` |
+| `best_obs_regret_all` | `T + 1` | `max(optimal − best_obs_true, 0)` — **not** guaranteed monotonic |
+| `log_best_obs_regret_all` | `T + 1` | `log(max(optimal − best_obs_true, 1e-8))` — **not** guaranteed monotonic |
+| `simple_regret_all` | `T + 1` | `max(f* − max_{i≤t} f_true(x_i), 0)` — noiseless simple regret over all observed inputs; monotonically non-increasing. **Present for all methods.** |
+| `log_simple_regret_all` | `T + 1` | `log(max(f* − max_{i≤t} f_true(x_i), 1e-8))`. **Present for all methods.** |
+
+The `rec_*` / `*inference_regret*` families are absent for `--acq_fn random` (DM SO) and for all baseline runs (`runners.test_w_baselines_hpo`).
+
+### DM multi-objective
+
+| Key | Length | Description |
+|---|---|---|
+| `trial`, `seed`, `time_seconds` | scalar | Metadata |
+| `ref_point` | `m` | Fixed reference point for hypervolume computation |
+| `hv_all` | `T + 1` | Dominated hypervolume of noisy observations at each step (index 0 = initial data) |
+| `log_hv_diff_all` | `T + 1` | `log(max_hv − hv)` — log HV regret on noisy observations; available for all methods including `random` |
+| `hv_true_all` | `T + 1` | Dominated hypervolume of noiseless `f_true` at all evaluated points (raw, non-monotonic) |
+| `log_hv_diff_true_all` | `T + 1` | `log(max_hv − hv_true)` (non-monotonic) |
+| `best_hv_true_all` | `T + 1` | Running max of `hv_true_all` — monotonically non-decreasing |
+| `log_best_hv_diff_true_all` | `T + 1` | `log(max_hv − best_hv_true)` — monotonically non-increasing |
+| `inf_hv_all` | `T + 1` | Raw inference HV: HV of noiseless `f_true` at the posterior-mean Pareto front. **Absent for `random`.** |
+| `best_inf_hv_all` | `T + 1` | Running max of `inf_hv_all`. **Absent for `random`.** |
+| `log_inference_hv_regret_all` | `T + 1` | `log(max_hv − inf_hv)` (non-monotonic). **Absent for `random`.** |
+| `log_best_inference_hv_regret_all` | `T + 1` | `log(max_hv − best_inf_hv)` — monotonically non-increasing. **Absent for `random`.** |
+| `pareto_x_best_hv` / `pareto_y_best_hv` | `P₁ × D` / `P₁ × m` | Non-dominated set (under `f_true`) at the iteration achieving `best_hv_true` |
+| `pareto_x_best_inf_hv` / `pareto_y_best_inf_hv` | `P₂ × D` / `P₂ × m` | Posterior-mean Pareto set at the iteration achieving `best_inf_hv`. **Absent for `random`.** |
+| `pareto_x_inf_hv` / `pareto_y_inf_hv` | `P₃ × D` / `P₃ × m` | Posterior-mean Pareto set at the final step. **Absent for `random`.** |
+| `candidates` | `(n0 + T) × D` | All evaluated points in order |
+| `seen_y` | `(n0 + T) × m` | All noisy observations in order |
+
+### Prompt optimization
+
+Top-level keys: `problem`, `acq_fn`, `turbo` (bool), `iterations`, `batch_size`, `ucb_beta`, `initial_random_samples`, `num_trials`, `trials`.
+
+Here `T` = `iterations // batch_size` and total evaluations = `n0 + iterations`. Per-trial keys match the single-objective table above (`candidates` is `(n0 + iterations) × D`, `seen_y` is `n0 + iterations`), with one addition:
+
+| Key | Length | Description |
+|---|---|---|
+| `turbo_length_all` | `T` | TuRBO trust-region length after each iteration. **Present only when `--turbo`.** |
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

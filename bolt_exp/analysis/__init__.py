@@ -1,1 +1,1 @@
-"""Analyses, FLOPs accounting and LaTeX table generation."""
+"""Analyses and LaTeX table generation."""

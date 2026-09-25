@@ -53,10 +53,10 @@ hpo_simple() {
 }
 
 # hpo on a training-FLOPs x axis (same curves, compute instead of query count).
-# --xmax_only is the largest budget every trial reaches, so no curve is drawn
+# --xmax (from compute_hpo_flops) is the largest budget every trial reaches, so no curve is drawn
 # past the point where it is backed by all the trials.
 hpo_flops() {
-    python -m bolt_exp.plot_results $(hpo_files) --out ${HPO_DIR}/hpo_simple_flops.pdf --figsize 5 4.5 --metric $SIMPLE --flops --xmax $(python -m bolt_exp.analysis.compute_hpo_flops --xmax_only $(hpo_files)) --config plot_configs/hpo_okabe_ito.yaml --no-title --mean-rank
+    python -m bolt_exp.plot_results $(hpo_files) --out ${HPO_DIR}/hpo_simple_flops.pdf --figsize 5 4.5 --metric $SIMPLE --flops --xmax $(python -m bolt_exp.analysis.compute_hpo_flops $(hpo_files)) --config plot_configs/hpo_okabe_ito.yaml --no-title --mean-rank
 }
 
 hpo_inf_inst() {
@@ -94,9 +94,9 @@ hpo_mf_simple() {
 }
 
 hpo_mf_flops() {
-    python -m bolt_exp.plot_results $(hpo_step_files) --out ${HPO_MF_DIR}/hpo_step_simple_flops.pdf --figsize 5 4.5 --metric $SIMPLE --flops --xmax $(python -m bolt_exp.analysis.compute_hpo_flops --xmax_only $(hpo_step_files)) --config plot_configs/hpo_step_okabe_ito.yaml --no-title --mean-rank
+    python -m bolt_exp.plot_results $(hpo_step_files) --out ${HPO_MF_DIR}/hpo_step_simple_flops.pdf --figsize 5 4.5 --metric $SIMPLE --flops --xmax $(python -m bolt_exp.analysis.compute_hpo_flops $(hpo_step_files)) --config plot_configs/hpo_step_okabe_ito.yaml --no-title --mean-rank
 
-    python -m bolt_exp.plot_results $(hpo_model_files) --out ${HPO_MF_DIR}/hpo_model_simple_flops.pdf --figsize 5 4.5 --metric $SIMPLE --flops --xmax $(python -m bolt_exp.analysis.compute_hpo_flops --xmax_only $(hpo_model_files)) --config plot_configs/hpo_model_okabe_ito.yaml --no-title --mean-rank
+    python -m bolt_exp.plot_results $(hpo_model_files) --out ${HPO_MF_DIR}/hpo_model_simple_flops.pdf --figsize 5 4.5 --metric $SIMPLE --flops --xmax $(python -m bolt_exp.analysis.compute_hpo_flops $(hpo_model_files)) --config plot_configs/hpo_model_okabe_ito.yaml --no-title --mean-rank
 }
 
 hpo_mf_inf_inst() {

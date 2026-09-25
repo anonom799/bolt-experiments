@@ -37,17 +37,16 @@ bolt_exp/
 ├── parallel_prior.py    physics-informed GP prior means for PCO (--prior_mean)
 ├── emulator_version.py  records which emulator version a run used
 ├── runners/             BO runners; each writes a result JSON
-├── analysis/            analyses, FLOPs accounting, LaTeX tables
+├── analysis/            analyses, LaTeX tables
 └── figures/             paper figures
 scripts/                 shell drivers for the full sweeps and figure sets
 plot_configs/            per-figure plot styling (colors, labels, ordering)
 results/                 experiment output JSONs (large ones ship gzipped; runners write here)
-flops/                   per-query and per-method FLOPs accounting (CSV)
 tables/                  generated LaTeX / Markdown tables used in the paper
 data/                    raw eval data behind the surrogates, PCO tables, MLHGP cache
 ```
 
-`bolt_exp.REPO_ROOT` anchors `results/`, `plot_configs/`, `flops/`, `tables/` and `data/`,
+`bolt_exp.REPO_ROOT` anchors `results/`, `plot_configs/`, `tables/` and `data/`,
 so modules find them regardless of the working directory. `bolt_exp.load_result` /
 `result_files` / `dedupe_results` are the shared readers every plot and analysis
 goes through; they hide whether a result is stored plain or gzipped.
@@ -285,7 +284,7 @@ Headline metrics: `log_simple_regret_all` for single-objective problems, `log_be
 | `figures.plot_real_vs_emulated`, `figures.plot_spearman_grid`, `analysis.table_real_vs_emulated_fit` | Emulator validation: BO on the real tasks vs on the emulators, and emulator fit on the points the real runs visited |
 | `analysis.mlhgp_noise_vs_bo_iter`, `figures.plot_mlhgp_noise_learning` | How well MLHGP's learned noise tracks the true noise as BO collects data |
 | `analysis.merge_seed_runs` | Join per-seed result shards into one multi-trial file |
-| `analysis.compute_hpo_flops`, `bolt_exp.hpo_flops`, `analysis.flops_table` | FLOPs accounting; writes `flops/` |
+| `bolt_exp.hpo_flops`, `analysis.compute_hpo_flops` | Training-FLOPs model behind `plot_results --flops`; `compute_hpo_flops` prints the FLOPs figures' x range |
 | `analysis.collate_po_regret`, `analysis.po_latex_table`, `analysis.table_wall_clock` | `analysis.collate_po_regret` writes `po_final_regret.csv`, which `analysis.po_latex_table` turns into `tables/po_delta_table.tex`; `analysis.table_wall_clock` writes the wall-clock tables (HPO/DM, PO, PCO) |
 | `analysis.find_optimal` | Locate a problem's optimum by grid search + local refinement (how the reference optima behind the regret metrics were obtained) |
 | `analysis.analyse_po_pca`, `analysis.analyse_dm_curriculum` | Analyses reported in the appendix |

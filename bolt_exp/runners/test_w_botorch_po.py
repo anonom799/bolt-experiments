@@ -15,6 +15,7 @@
 #
 # Arguments:
 #   --problem       Problem variant: po128, po256, po512, po768          (default: po128)
+#   --noise_std     Observation noise std for the emulator                (default: problem class default)
 #   --acq_fn        Acquisition function: ei, qnei, ucb, kg, mes, gibbon, pes, jes, ts, random  (default: qnei)
 #   --iterations    Number of BO iterations; total observations = iterations * batch_size  (default: 100)
 #   --batch_size    Candidates per BO iteration; ei/ucb require 1        (default: 1)
@@ -343,6 +344,8 @@ def get_raasp_candidates(
 
 
 def get_beta_t(n_step: int, n_var_dim: int) -> float:
+    # Loosely based on Srinivas et al. (2010), with edits: their Theorem 1 uses
+    # |D|, the candidate set size, where this passes the input dimension. delta=0.1.
     return 2.0 * np.log(n_var_dim * (n_step + 1) ** 2 * np.pi**2 / 6.0 / 0.1)
 
 
@@ -438,13 +441,17 @@ def main(args):
         dev = "cpu"
     dtype = torch.float32 if dev in ("mps", "cpu") else torch.double
 
-    prob = _PO_CLASSES[args.problem](noise_std=0.001, negate=False)
+    # --noise_std unset: let the problem class use its own default noise std
+    noise_kwargs = {} if args.noise_std is None else {"noise_std": args.noise_std}
+    prob = _PO_CLASSES[args.problem](negate=False, **noise_kwargs)
+    noise_std = prob.noise_std
+    print("noise std:", noise_std)
     prob.to(dtype=dtype, device=dev)
 
     optimal_value = prob.obj_func.ys.max().item()
 
     # Full discrete candidate set loaded from the table once
-    all_X = prob.obj_func.Xs.to(device=dev, dtype=dtype)  # (N, 128)
+    all_X = prob.candidates(dtype=dtype, device=dev)  # (N, dim)
     bounds_tensor = torch.tensor(prob._bounds, dtype=dtype).T.to(dev)  # (2, 128)
 
     covar_module = (
@@ -453,8 +460,11 @@ def main(args):
 
     all_trial_results = []
 
+    # --seed_offset sets the seed independently of --trial_offset (see --help)
+    seed_base = args.trial_offset if args.seed_offset is None else args.seed_offset
+
     for trial in range(args.trials):
-        seed = trial + args.trial_offset
+        seed = trial + seed_base
         print(f"\n{'='*60}")
         print(f"Trial {trial + 1}/{args.trials}  (seed={seed})")
         print(f"{'='*60}")
@@ -812,6 +822,7 @@ def main(args):
         "batch_size": args.batch_size,
         "ucb_beta": ucb_beta_fixed,
         "initial_random_samples": args.initial_random_samples,
+        "noise_std": noise_std,
         "num_trials": args.trials,
         "trials": all_trial_results,
     }
@@ -825,12 +836,14 @@ def main(args):
     raasp_tag = "_msr" if args.msr else ("_raasp" if args.raasp else "")
     scaled_init_tag = "_mlesi" if args.mle_scaled_init and not args.msr else ""
 
-    results_dir = REPO_ROOT / "results" / "po"
+    results_dir = REPO_ROOT / "results" / f"po{args.folder_prefix}"
     results_dir.mkdir(parents=True, exist_ok=True)
 
+    # per-seed shards get their own filename so parallel runs never collide
+    seed_tag = "" if args.seed_offset is None else f"_seed{args.seed_offset}"
     output_file = (
         results_dir
-        / f"{args.problem}_{args.acq_fn}{surrogate_tag}{raasp_tag}{scaled_init_tag}{ucb_beta_tag}{batch_tag}_{args.trials}trials_{args.iterations}iterations_results.json"
+        / f"{args.problem}_{args.acq_fn}{surrogate_tag}{raasp_tag}{scaled_init_tag}{ucb_beta_tag}{batch_tag}_{args.trials}trials_{args.iterations}iterations{seed_tag}_results.json"
     )
     with open(output_file, "w") as f:
         json.dump(results, f, indent=4)
@@ -846,6 +859,18 @@ def parse_args():
         default="po128",
         choices=["po128", "po256", "po512", "po768"],
         help="PO problem variant. Default: po128",
+    )
+    parser.add_argument(
+        "--noise_std",
+        type=float,
+        default=None,
+        help="Observation noise std for the emulator. Default: the problem class's own default",
+    )
+    parser.add_argument(
+        "--folder_prefix",
+        type=str,
+        default="",
+        help="Suffix appended to the results subfolder name, e.g. 'po{folder_prefix}'. Default: '' (results/po)",
     )
     parser.add_argument(
         "--acq_fn",
@@ -890,6 +915,16 @@ def parse_args():
         type=int,
         default=1,
         help="Number of independent trials. Default: 1",
+    )
+    parser.add_argument(
+        "--seed_offset",
+        type=int,
+        default=None,
+        help=(
+            "Seed for the first trial, independent of --trial_offset. Writes a separate "
+            "_seed<N>_results.json shard so seeds can be run as parallel processes and "
+            "combined afterwards with scripts/merge_seed_runs.py. Default: use --trial_offset"
+        ),
     )
     parser.add_argument(
         "--trial_offset",

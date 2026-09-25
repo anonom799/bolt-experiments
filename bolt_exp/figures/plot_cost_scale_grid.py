@@ -20,7 +20,12 @@ import seaborn as sns
 import yaml
 
 from bolt_exp import dedupe_results
-from bolt_exp.plot_results import load_results, YLABEL_MAP
+from bolt_exp.plot_results import (
+    load_results,
+    normalize_regret,
+    NORMALIZED_METRIC,
+    YLABEL_MAP,
+)
 
 
 def _parse_args():
@@ -36,6 +41,10 @@ def _parse_args():
     p.add_argument("--xmax", type=float, default=None)
     p.add_argument("--ymin", type=float, default=None)
     p.add_argument("--ymax", type=float, default=None)
+    p.add_argument(
+        "--sharey", action=argparse.BooleanOptionalAction, default=True,
+        help="Share the y-axis across subplots (default: on)",
+    )
     p.add_argument("--subplot-width", type=float, default=4.0)
     p.add_argument("--height", type=float, default=4.0)
     return p.parse_args()
@@ -59,6 +68,7 @@ def main():
     cfg_order = [e["label"] for e in cfg_entries]
 
     dfs, metrics = [], []
+    bounds: list[tuple[float, float]] = []
     for f in dedupe_results(args.files):
         path = Path(f)
         if not path.exists() and not path.with_name(path.name + ".gz").exists():
@@ -72,6 +82,7 @@ def main():
                 use_budget=args.budget,
                 use_wall_clock=args.wall_clock,
                 show_cost_scale=args.cost_scale_label,
+                bounds_out=bounds,
             )
         except KeyError as e:
             print(f"Warning: skipping {f} — {e}")
@@ -85,6 +96,9 @@ def main():
 
     metric = max(set(metrics), key=metrics.count)
     df_all = pd.concat(dfs, ignore_index=True)
+    if metric == NORMALIZED_METRIC:
+        # pooled over every loaded file: all methods, cost scales and seeds
+        df_all = normalize_regret(df_all, bounds)
     df_all = df_all[df_all["method"].isin(cfg_order)]
 
     # unique base methods in config order
@@ -102,7 +116,7 @@ def main():
     fig, axes = plt.subplots(
         1, n_methods,
         figsize=(args.subplot_width * n_methods, args.height),
-        sharey=False,
+        sharey=args.sharey,
     )
     if n_methods == 1:
         axes = [axes]
@@ -111,7 +125,7 @@ def main():
     ymin = args.ymin if args.ymin is not None else cfg_ymin
     ymax = args.ymax if args.ymax is not None else cfg_ymax
 
-    for ax, base in zip(axes, base_methods):
+    for i, (ax, base) in enumerate(zip(axes, base_methods)):
         sub_labels = [lbl for lbl in cfg_order if _strip_cost_scale(lbl) == base]
         sub_df = df_all[df_all["method"].isin(sub_labels)]
 
@@ -120,11 +134,14 @@ def main():
             continue
 
         for lbl in sub_labels:
+            lbl_df = sub_df[sub_df["method"] == lbl]
+            if lbl_df.empty:
+                continue
             short = re.sub(r"^[^(]+", "", lbl)  # "(cost_scale=X)"
             color = cfg_colors.get(lbl, "#333333")
             linestyle = cfg_linestyles.get(lbl, "solid")
             sns.lineplot(
-                data=sub_df[sub_df["method"] == lbl],
+                data=lbl_df,
                 x="step",
                 y="value",
                 color=color,
@@ -144,7 +161,7 @@ def main():
 
         ax.set_title(base)
         ax.set_xlabel("Cumulative budget" if args.budget else "Number of observations")
-        ax.set_ylabel(ylabel)
+        ax.set_ylabel(ylabel if (i == 0 or not args.sharey) else "")
 
         sns.move_legend(ax, "best", title="cost_scale", framealpha=0.9, edgecolor="0.7")
 

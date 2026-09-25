@@ -2,6 +2,7 @@
 
 Table 1: HPO + DMO side-by-side subtables.
 Table 2: PO — methods as rows, PO-128/256/512/768 as columns.
+Table 3: PCO — methods as rows, PCO-16/32/64 as columns.
 
 File selection and method ordering mirror plot_figs.sh / plot_configs/.
 """
@@ -111,6 +112,12 @@ PO_PROBS = [
     ("PO-768", "results/po/po768_*_200iterations*.json", [r"mlesi"], "po768_okabe_ito.yaml"),
 ]
 
+PCO_PROBS = [
+    ("PCO-16", "results/pco16/pco16_*_10trials_100iterations*.json", [], "pco16_okabe_ito.yaml"),
+    ("PCO-32", "results/pco32/pco32_*_10trials_50iterations*.json", [], "pco32_okabe_ito.yaml"),
+    ("PCO-64", "results/pco64/pco64_*_10trials_100iterations*.json", [], "pco64_okabe_ito.yaml"),
+]
+
 
 # ── formatting ────────────────────────────────────────────────────────────────
 
@@ -184,12 +191,12 @@ def _build_subtable(title: str, probs: list[tuple]) -> list[str]:
     return lines
 
 
-# ── PO table builder ──────────────────────────────────────────────────────────
+# ── column table builder (for PO / PCO) ──────────────────────────────────────
 
-def _build_po_table() -> list[str]:
+def _build_column_table(probs: list[tuple], caption: str, label: str) -> list[str]:
     # Collect per-problem method->mean dicts
     col_data: list[tuple[str, dict[str, float]]] = []
-    for prob_display, pattern, excludes, config in PO_PROBS:
+    for prob_display, pattern, excludes, config in probs:
         files = _load_files(pattern, excludes)
         if not files:
             print(f"  WARNING: no files for {prob_display}")
@@ -206,14 +213,14 @@ def _build_po_table() -> list[str]:
             print(f"    {method}: {method_trials[method]} trials")
         col_data.append((prob_display, method_times))
 
-    # Build unified method order from po128 config, then po256 for extras
+    # Build unified method order from the first config, then later ones for extras
     all_methods: set[str] = set()
     for _, mt in col_data:
         all_methods.update(mt.keys())
 
-    po128_order = _config_order("po128_okabe_ito.yaml")
-    po256_order = _config_order("po256_okabe_ito.yaml")
-    combined_order = po128_order + [m for m in po256_order if m not in po128_order]
+    combined_order: list[str] = []
+    for *_, config in probs:
+        combined_order += [m for m in _config_order(config) if m not in combined_order]
     ordered_methods = [m for m in combined_order if m in all_methods]
     ordered_methods += sorted(all_methods - set(combined_order))
 
@@ -229,8 +236,8 @@ def _build_po_table() -> list[str]:
         r"\begin{table}[h]",
         r"  \centering",
         r"  \footnotesize",
-        r"  \caption{Mean wall-clock time per BO step --- prompt optimisation problems.}",
-        r"  \label{tab:wall_clock_po}",
+        rf"  \caption{{{caption}}}",
+        rf"  \label{{{label}}}",
         rf"  \begin{{tabular}}{{{col_spec}}}",
         r"    \toprule",
         rf"    \textbf{{Method}} & {header_cells} \\",
@@ -268,7 +275,19 @@ def build_hpo_dmo_table() -> list[str]:
 
 
 def build_po_table() -> list[str]:
-    return _build_po_table()
+    return _build_column_table(
+        PO_PROBS,
+        "Mean wall-clock time per BO step --- prompt optimisation problems.",
+        "tab:wall_clock_po",
+    )
+
+
+def build_pco_table() -> list[str]:
+    return _build_column_table(
+        PCO_PROBS,
+        "Mean wall-clock time per BO step --- parallelism configuration problems.",
+        "tab:wall_clock_pco",
+    )
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
@@ -281,24 +300,28 @@ def main() -> None:
         default=REPO_ROOT / "tables",
         help="Output directory (default: tables/, where the paper's copies live)",
     )
+    parser.add_argument(
+        "--tables",
+        default="hpo_dmo,po,pco",
+        help="Comma-separated subset of tables to build (hpo_dmo, po, pco)",
+    )
     args = parser.parse_args()
+    args.out_dir = args.out_dir.resolve()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     os.chdir(REPO_ROOT)
 
-    hpo_dmo = "\n".join(build_hpo_dmo_table())
-    po = "\n".join(build_po_table())
-
-    out1 = args.out_dir / "wall_clock_hpo_dmo.tex"
-    out2 = args.out_dir / "wall_clock_po.tex"
-
-    out1.write_text(hpo_dmo + "\n")
-    out2.write_text(po + "\n")
-
-    print(hpo_dmo)
-    print()
-    print(po)
-    print(f"\nSaved to {out1} and {out2}")
+    builders = {
+        "hpo_dmo": build_hpo_dmo_table,
+        "po": build_po_table,
+        "pco": build_pco_table,
+    }
+    for name in args.tables.split(","):
+        tex = "\n".join(builders[name]())
+        out = args.out_dir / f"wall_clock_{name}.tex"
+        out.write_text(tex + "\n")
+        print(tex)
+        print(f"\nSaved to {out}\n")
 
 
 if __name__ == "__main__":

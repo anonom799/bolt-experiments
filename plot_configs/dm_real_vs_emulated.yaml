@@ -1,0 +1,38 @@
+# Methods config for plot_real_vs_emulated.py (DM curriculum: real vs emulated).
+title: "DMO: real vs emulated"
+n_iterations: 50
+
+source_labels:
+  real: Real
+  emulated: "Emulated (DMO)"
+  emulated_het: "Emulated (DMO-Het)"
+
+sources:
+  real: results/dm_real
+  emulated: results/dm
+  emulated_het: results/dm
+
+methods:
+  - label: RANDOM
+    files:
+      real: dm_real_random_5trials_50iterations_results.json
+      emulated: dm_curriculum_random_10trials_200iterations_results.json
+      emulated_het: dm_curriculum_heteroscedastic_random_10trials_200iterations_results.json
+
+  - label: TS
+    files:
+      real: dm_real_ts_5trials_50iterations_results.json
+      emulated: dm_curriculum_ts_10trials_200iterations_results.json
+      emulated_het: dm_curriculum_heteroscedastic_ts_10trials_200iterations_results.json
+
+  - label: LogNEI
+    files:
+      real: dm_real_lognei_5trials_50iterations_results.json
+      emulated: dm_curriculum_qnei_10trials_200iterations_results.json
+      emulated_het: dm_curriculum_heteroscedastic_qnei_10trials_200iterations_results.json
+
+  - label: "UCB(beta=2.0)"
+    files:
+      real: dm_real_ucb2_5trials_50iterations_results.json
+      emulated: dm_curriculum_ucb_beta2.0_10trials_200iterations_results.json
+      emulated_het: dm_curriculum_heteroscedastic_ucb_beta2.0_10trials_200iterations_results.json

@@ -1,0 +1,51 @@
+# Plot config for q=1 vs q=5 batch size comparison on the DM multi-objective problem.
+# Usage: python -m bolt_exp.plot_results <dm mo results json...> --config plot_configs/dm_mo_batch_okabe_ito.yaml --out out.pdf
+#
+# Same color per method, linestyle varies by batch size (q).
+
+title: "DM-MO batch size comparison"
+figsize: [1.67, 2.8]
+save_legend: True
+
+# Pinned so the four facets keep one fixed scale across regenerations (sharey is
+# on, so autoscale would otherwise let whichever facet spreads widest set the
+# range for all of them). Both metric passes in plot_figs.sh use
+# log_best_hv_diff_true_all here, so one pair of limits covers the whole family.
+# Span is mean +/- 95% CI over the 8 files, measured over the VISIBLE region only:
+# x is step*q (plot_results.load_results), so --xmax 200 cuts the q=5 curves at
+# step 40 and their tails are never drawn. Data spans [-9.18, -6.91].
+ymin: -9.3
+ymax: -6.8
+
+methods:
+  - label: RANDOM
+    color: "#000000"
+    linestyle: dotted
+
+  - label: RANDOM(q=5)
+    color: "#000000"
+    linestyle: dashed
+
+  - label: ParEGO
+    color: "#56B4E9"
+    linestyle: solid
+
+  - label: ParEGO(q=5)
+    color: "#56B4E9"
+    linestyle: dashed
+
+  - label: NEHVI
+    color: "#009E73"
+    linestyle: solid
+
+  - label: NEHVI(q=5)
+    color: "#009E73"
+    linestyle: dashed
+
+  - label: MES_MO
+    color: "#D55E00"
+    linestyle: solid
+
+  - label: MES_MO(q=5)
+    color: "#D55E00"
+    linestyle: dashed

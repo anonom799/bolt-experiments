@@ -1,13 +1,14 @@
 # Multi-objective baseline methods (TSEMO, NSGA-II, NSGA-III) for dm_curriculum_mo.
 #
 # Usage:
-#   python test_w_baselines_mo.py --method tsemo
-#   python test_w_baselines_mo.py --method nsga2 --pop_size 50 --iterations 10
-#   python test_w_baselines_mo.py --method nsga3 --iterations 10 --trials 3
-#   python test_w_baselines_mo.py --method tsemo --iterations 50 --trials 3 --verbose
+#   python scripts/test_w_baselines_mo.py --method tsemo
+#   python scripts/test_w_baselines_mo.py --method nsga2 --pop_size 50 --iterations 10
+#   python scripts/test_w_baselines_mo.py --method nsga3 --iterations 10 --trials 3
+#   python scripts/test_w_baselines_mo.py --method tsemo --iterations 50 --trials 3 --verbose
 #
 # Arguments:
-#   --problem         {dm_curriculum_mo}                                        (default: dm_curriculum_mo)
+#   --problem         {dm_curriculum_mo}                                          (default: dm_curriculum_mo)
+#   --noise_std       Emulator noise std                              (default: problem's own)
 #   --method          {tsemo, nsga2, nsga3}                                      (default: tsemo)
 #   --iterations      TSEMO: BO iterations. NSGA: number of generations.         (default: 100)
 #   --pop_size        NSGA only: population size per generation.                  (default: 50)
@@ -40,6 +41,7 @@ import math
 from pathlib import Path
 import time
 
+from bolt_exp import emulator_version
 import numpy as np
 import torch
 from botorch.fit import fit_gpytorch_mll
@@ -493,7 +495,13 @@ def main(args):
         device = "cpu"
     dtype = torch.float32 if device in ("mps", "cpu") else torch.double
 
-    prob = DMCurriculumMO(noise_std=0.001, negate=False)
+    # --noise_std unset: let DMCurriculumMO use its own measured per-objective default
+    if args.noise_std is None:
+        prob = DMCurriculumMO(negate=False)
+        noise_std = DMCurriculumMO._measured_std
+    else:
+        noise_std = args.noise_std
+        prob = DMCurriculumMO(noise_std=noise_std, negate=False)
     prob.to(dtype=dtype, device=device)
 
     bounds = torch.tensor(prob._bounds, dtype=dtype).T.to(device)
@@ -524,7 +532,7 @@ def main(args):
             f"final hv={result['hv_all'][-1]:.4f}"
         )
 
-    results_dir = REPO_ROOT / "results" / "dm"
+    results_dir = REPO_ROOT / "results" / f"dm{args.folder_prefix}"
     results_dir.mkdir(parents=True, exist_ok=True)
 
     total_trials = args.trial_offset + args.trials
@@ -535,6 +543,8 @@ def main(args):
         "iterations": args.iterations,
         "pop_size": args.pop_size if args.method in ("nsga2", "nsga3") else None,
         "initial_random_samples": args.initial_random_samples if args.method == "tsemo" else None,
+        "noise_std": noise_std,
+        "emulator_versions": emulator_version.emulator_versions_for(prob),
     }
 
     def _make_filename(n_trials: int) -> Path:
@@ -595,6 +605,18 @@ def parse_args():
         default="dm_curriculum_mo",
         choices=["dm_curriculum_mo"],
         help="Problem to optimize. Default: dm_curriculum_mo",
+    )
+    parser.add_argument(
+        "--noise_std",
+        type=float,
+        default=None,
+        help="Observation noise std for the emulator. Default: the problem class's own default",
+    )
+    parser.add_argument(
+        "--folder_prefix",
+        type=str,
+        default="",
+        help="Suffix appended to the results subfolder name, e.g. 'dm{folder_prefix}'. Default: '' (results/dm)",
     )
     parser.add_argument(
         "--method",

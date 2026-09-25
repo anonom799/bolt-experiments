@@ -1,0 +1,63 @@
+# Plot config for q=1 vs q=5 vs q=10 comparison on the DM problem.
+# Usage: python -m bolt_exp.plot_results <dm results json...> --config plot_configs/dm_batch_okabe_ito.yaml --out out.pdf
+#
+# Same color per method, linestyle varies by batch size (q).
+
+title: "DM batch size comparison"
+figsize: [1.67, 2.8]
+save_legend: True
+
+# No ymin/ymax here on purpose: plot_figs.sh renders this config twice, once with
+# normalized_regret_all (data spans [0.04, 0.38]) and once with
+# log_simple_regret_all (spans [-9.36, -4.47]), so a single pinned pair would
+# blank one of the two passes. The limits are pinned per metric with --ymin/--ymax
+# at the call site instead (plot_figs.sh, DM_BATCH_YLIM), which overrides config.
+
+methods:
+  - label: RANDOM
+    color: "#000000"
+    linestyle: solid
+
+  - label: RANDOM(q=5)
+    color: "#000000"
+    linestyle: dashed
+
+  - label: RANDOM(q=10)
+    color: "#000000"
+    linestyle: dashdot
+
+  - label: LogNEI
+    color: "#009E73"
+    linestyle: solid
+
+  - label: LogNEI(q=5)
+    color: "#009E73"
+    linestyle: dashed
+
+  - label: LogNEI(q=10)
+    color: "#009E73"
+    linestyle: dashdot
+
+  - label: MES
+    color: "#D55E00"
+    linestyle: solid
+
+  - label: MES(q=5)
+    color: "#D55E00"
+    linestyle: dashed
+
+  - label: MES(q=10)
+    color: "#D55E00"
+    linestyle: dashdot
+
+  - label: GIBBON
+    color: "#CC79A7"
+    linestyle: solid
+
+  - label: GIBBON(q=5)
+    color: "#CC79A7"
+    linestyle: dashed
+
+  - label: GIBBON(q=10)
+    color: "#CC79A7"
+    linestyle: dashdot

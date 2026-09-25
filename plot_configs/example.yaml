@@ -1,5 +1,5 @@
 # Example plot config for plot_results.py
-# Usage: python plot_results.py results/*.json --config plot_configs/example.yaml --out out.png
+# Usage: python -m bolt_exp.plot_results results/*.json --config plot_configs/example.yaml --out out.png
 #
 # Optional top-level fields:
 #   title:       plot title (overrides the auto-generated default; --title CLI arg takes precedence)

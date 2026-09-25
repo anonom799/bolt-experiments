@@ -10,6 +10,7 @@
 #
 # Arguments:
 #   --problem         {dm_curriculum, dm_curriculum_mo, dm_curriculum_heteroscedastic}  (default: dm_curriculum_mo)
+#   --noise_std       Observation noise std for the emulator; ignored for heteroscedastic problems  (default: problem class default)
 #   --acq_fn          Acquisition function (SO): ei, qnei, ucb, kg, mes, gibbon, pes, jes, ts;
 #                     (MO): qnehvi, qparego, qhvkg, jes_mo, mes_mo, pes_mo; (both): random. Default: auto
 #   --ucb_beta        Fixed beta for UCB (SO only). Options: 0.1, 0.5, 1.0, 2.0.
@@ -45,6 +46,9 @@ import math
 from pathlib import Path
 import time
 
+from bolt_exp import emulator_version
+
+from botorch.exceptions.errors import CandidateGenerationError
 from botorch.acquisition import (
     LogExpectedImprovement,
     PosteriorMean,
@@ -85,6 +89,16 @@ from bolt import (
 from bolt_exp.mlhgp import fit_mlhgp
 
 from bolt_exp import REPO_ROOT
+
+def device_info(dev: str) -> dict:
+    """Hardware the run executed on, recorded so timings stay comparable across machines."""
+    if dev == "cuda":
+        gpu_name = torch.cuda.get_device_name(0)
+    elif dev == "mps":
+        gpu_name = "mps"
+    else:
+        gpu_name = None
+    return {"device": dev, "gpu_name": gpu_name}
 
 
 MO_PROBLEMS = {"dm_curriculum_mo"}
@@ -363,6 +377,8 @@ def compute_ref_point(train_y: torch.Tensor, slack: float = 0.1) -> list[float]:
 
 
 def get_beta_t(n_step: int, n_var_dim: int) -> float:
+    # Loosely based on Srinivas et al. (2010), with edits: their Theorem 1 uses
+    # |D|, the candidate set size, where this passes the input dimension. delta=0.1.
     return 2.0 * np.log(n_var_dim * (n_step + 1) ** 2 * np.pi**2 / 6.0 / 0.1)
 
 def get_optimal_inputs_simplex(
@@ -774,6 +790,12 @@ def get_next_candidate(
     _sequential_acqfns = {"mes", "gibbon", "ei", "ucb"}
     use_sequential = acq_fn in _sequential_acqfns and batch_size > 1
 
+    # CandidateGenerationError is raised when optimize_acqf returns a candidate that
+    # violates the simplex equality constraints and BoTorch's SLSQP repair projection
+    # (optimize.py -> project_to_feasible_space_via_slsqp) then fails to converge.
+    # It derives from BotorchError, NOT RuntimeError, so it must be named explicitly.
+    # Resampling is a legitimate retry: qParEGO redraws its scalarisation weights each
+    # call anyway, so a fresh draw is the same method, not a fudge.
     for attempt in range(MAX_ACQF_RETRIES):
         try:
             candidate, acq_value = optimize_acqf(
@@ -783,11 +805,13 @@ def get_next_candidate(
                 sequential=use_sequential,
             )
             return candidate.detach().to(dtype=dtype), acq_value
-        except RuntimeError as e:
+        except (RuntimeError, CandidateGenerationError) as e:
             # Acquisition function occasionally produces NaN/inf values; resample and retry
             is_nan_inf_error = "nan" in str(e).lower() or "inf" in str(e).lower()
-            if attempt < MAX_ACQF_RETRIES - 1 and is_nan_inf_error:
-                print(f"[trial {trial}, iter {itr}] NaN/inf in optimize_acqf (attempt {attempt + 1}), resampling acqf...")
+            is_infeasible_error = isinstance(e, CandidateGenerationError)
+            if attempt < MAX_ACQF_RETRIES - 1 and (is_nan_inf_error or is_infeasible_error):
+                reason = "infeasible candidate" if is_infeasible_error else "NaN/inf"
+                print(f"[trial {trial}, iter {itr}] {reason} in optimize_acqf (attempt {attempt + 1}), resampling acqf...")
                 if is_mo:
                     acq = build_mo_acqf(
                         acq_fn, model, train_x, train_y, ref_point, bounds_dev,
@@ -853,8 +877,15 @@ def compute_hypervolume(train_y: torch.Tensor, ref_point: list[float]) -> float:
 
 
 def main(args):
+    # Overridable so a single stubborn seed can be given more resampling attempts
+    # without changing behaviour for any other run (see --max_acqf_retries).
+    global MAX_ACQF_RETRIES
+    MAX_ACQF_RETRIES = args.max_acqf_retries
+
     print("problem:", args.problem)
     print("acq_fn:", args.acq_fn)
+    if args.max_acqf_retries != 3:
+        print("max_acqf_retries:", args.max_acqf_retries)
     if args.acq_fn == "ucb" and not args.problem in MO_PROBLEMS:
         beta_desc = f"fixed ({args.ucb_beta})" if args.ucb_beta is not None else "Srinivas schedule"
         print(f"ucb_beta: {beta_desc}")
@@ -883,16 +914,30 @@ def main(args):
     else:
         dev = "cpu"
 
+    dev_info = device_info(dev)
+    print("device:", dev_info["device"], "|", dev_info["gpu_name"])
+
     dtype = torch.float32 if dev in ("mps", "cpu") else torch.double
 
+    # heteroscedastic problems draw noise from their own emulator; --noise_std does not apply.
+    # --noise_std unset: let each problem class use its own default noise std.
+    noise_kwargs = (
+        {}
+        if args.noise_std is None or "heteroscedastic" in args.problem
+        else {"noise_std": args.noise_std}
+    )
+
     if args.problem == "dm_curriculum":
-        prob = DMCurriculum(noise_std=0.001, negate=False)
+        prob = DMCurriculum(negate=False, **noise_kwargs)
     elif args.problem == "dm_curriculum_mo":
-        prob = DMCurriculumMO(noise_std=0.001, negate=False)
+        prob = DMCurriculumMO(negate=False, **noise_kwargs)
     elif args.problem == "dm_curriculum_heteroscedastic":
         prob = DMCurriculumHet(negate=False)
     else:
         raise ValueError(f"Unknown problem {args.problem}")
+
+    noise_std = prob.noise_std
+    print("noise std:", noise_std)
 
     prob.to(dtype=dtype, device=dev)
 
@@ -912,8 +957,12 @@ def main(args):
     num_bo_iters = args.iterations
     all_trial_results = []
 
+    # --seed_offset sets the seed independently of --trial_offset, so seeds can be run
+    # as separate parallel processes without triggering the merge-with-existing-file path.
+    seed_base = args.trial_offset if args.seed_offset is None else args.seed_offset
+
     for trial in range(args.trials):
-        seed = trial + args.trial_offset
+        seed = trial + seed_base
         print(f"\n{'='*60}")
         print(f"Trial {trial + 1}/{args.trials}  (seed={seed})")
         print(f"{'='*60}")
@@ -971,7 +1020,7 @@ def main(args):
             candidates = train_x_np
 
             if use_mlhgp:
-                train_x_d = train_x.to(dtype=torch.double)
+                train_x_d = train_x.to(dtype=dtype)
                 warm_noise = (
                     (prob.evaluate_noise(train_x_d).clamp(min=1e-6) ** 2).to(device=dev, dtype=dtype)
                     if use_known_noise
@@ -989,7 +1038,7 @@ def main(args):
                     train_yvar = warm_noise
 
             elif use_known_noise:
-                train_x_d = train_x.to(dtype=torch.double)
+                train_x_d = train_x.to(dtype=dtype)
                 train_yvar = (
                     prob.evaluate_noise(train_x_d).clamp(min=1e-6) ** 2
                 ).to(device=dev, dtype=dtype)
@@ -1037,7 +1086,7 @@ def main(args):
             if use_mlhgp:
                 mll, model = fit_mlhgp_so_model(train_x, train_y, bounds_dev, n_em_iter=args.mlhgp_em_iter, covar_module=covar_module)
             elif use_known_noise:
-                train_x_d = train_x.to(dtype=torch.double)
+                train_x_d = train_x.to(dtype=dtype)
                 train_yvar = (
                     prob.evaluate_noise(train_x_d).clamp(min=1e-6) ** 2
                 ).to(device=dev, dtype=dtype)
@@ -1130,7 +1179,7 @@ def main(args):
                     warm_noise = None
 
                     if use_known_noise:
-                        new_x_d = new_x.to(dtype=torch.double)
+                        new_x_d = new_x.to(dtype=dtype)
                         new_yvar = (
                             prob.evaluate_noise(new_x_d).clamp(min=1e-6) ** 2
                         ).to(device=dev, dtype=dtype)
@@ -1144,7 +1193,7 @@ def main(args):
                         covar_module=covar_module,
                     )
                 elif use_known_noise:
-                    new_x_d = new_x.to(dtype=torch.double)
+                    new_x_d = new_x.to(dtype=dtype)
                     new_yvar = (
                         prob.evaluate_noise(new_x_d).clamp(min=1e-6) ** 2
                     ).to(device=dev, dtype=dtype)
@@ -1211,7 +1260,7 @@ def main(args):
                 if use_mlhgp:
                     mll, model = fit_mlhgp_so_model(train_x, train_y, bounds_dev, n_em_iter=args.mlhgp_em_iter, covar_module=covar_module)
                 elif use_known_noise:
-                    new_x_d = new_x.to(dtype=torch.double)
+                    new_x_d = new_x.to(dtype=dtype)
                     new_yvar = (
                         prob.evaluate_noise(new_x_d).clamp(min=1e-6) ** 2
                     ).to(device=dev, dtype=dtype)
@@ -1247,6 +1296,7 @@ def main(args):
                 "trial": trial,
                 "seed": seed,
                 "time_seconds": t1 - t0,
+                **dev_info,
                 "ref_point": ref_point,
                 "hv_all": hv_all,
                 "log_hv_diff_all": log_hv_diff_all,
@@ -1276,6 +1326,7 @@ def main(args):
                 "trial": trial,
                 "seed": seed,
                 "time_seconds": t1 - t0,
+                **dev_info,
                 "best_y_all": best_y_all,
                 "rec_x_all": rec_x_all,
                 "rec_true_all": rec_true_all,
@@ -1297,11 +1348,14 @@ def main(args):
         all_trial_results.append(trial_result)
 
     ucb_beta_fixed = args.ucb_beta if (args.acq_fn == "ucb" and not is_mo) else None
-    results_dir = REPO_ROOT / "results" / "dm"
+    results_dir = REPO_ROOT / "results" / f"dm{args.folder_prefix}"
     results_dir.mkdir(parents=True, exist_ok=True)
 
     ucb_beta_tag = f"_beta{ucb_beta_fixed}" if ucb_beta_fixed is not None else ""
     batch_tag = f"_q{args.batch_size}" if args.batch_size > 1 else ""
+
+    # per-seed shards get their own filename so parallel runs never collide
+    seed_tag = "" if args.seed_offset is None else f"_seed{args.seed_offset}"
 
     def _make_filename(n_trials: int) -> Path:
         mlhgp_tag = f"_mlhgp_em{args.mlhgp_em_iter}" if use_mlhgp else ""
@@ -1310,20 +1364,25 @@ def main(args):
             f"{mlhgp_tag}"
             f"{'_knownnoise' if use_known_noise else ''}"
             f"{batch_tag}"
-            f"_{n_trials}trials_{args.iterations}iterations_results.json"
+            f"_{n_trials}trials_{args.iterations}iterations{seed_tag}_results.json"
         )
 
-    _config_keys = ["problem", "acq_fn", "ucb_beta", "known_noise", "mlhgp", "mlhgp_em_iter", "iterations", "batch_size", "initial_random_samples"]
+    _config_keys = ["problem", "acq_fn", "ucb_beta", "known_noise", "mlhgp", "mlhgp_em_iter", "iterations", "batch_size", "initial_random_samples", "noise_std"]
     new_config = {
         "problem": args.problem,
         "acq_fn": args.acq_fn,
         "ucb_beta": ucb_beta_fixed,
+        "noise_std": noise_std,
         "known_noise": use_known_noise,
         "mlhgp": use_mlhgp,
         "mlhgp_em_iter": args.mlhgp_em_iter if use_mlhgp else None,
         "iterations": args.iterations,
         "batch_size": args.batch_size,
         "initial_random_samples": args.initial_random_samples,
+        # not part of _config_keys: merging trials run on different hardware is allowed,
+        # per-trial gpu_name keeps the record straight.
+        **dev_info,
+        "emulator_versions": emulator_version.emulator_versions_for(prob),
     }
 
     if args.trial_offset > 0:
@@ -1375,6 +1434,22 @@ def parse_args():
         default=None,
         choices=["qnei", "ei", "ucb", "kg", "mes", "gibbon", "pes", "jes", "ts", "random", "qnehvi", "qparego", "qhvkg", "jes_mo", "mes_mo", "pes_mo"],
         help="Acquisition function. SO: ei, ucb, kg, mes, gibbon, pes, jes, ts, qnei. MO: qnehvi, qparego, qhvkg, jes_mo, mes_mo, pes_mo. Both: random. Default: auto",
+    )
+    parser.add_argument(
+        "--noise_std",
+        type=float,
+        default=None,
+        help=(
+            "Observation noise std for the emulator. Ignored for heteroscedastic problems, "
+            "which draw input-dependent noise from their own emulator. "
+            "Default: the problem class's own default"
+        ),
+    )
+    parser.add_argument(
+        "--folder_prefix",
+        type=str,
+        default="",
+        help="Suffix appended to the results subfolder name, e.g. 'dm{folder_prefix}'. Default: '' (results/dm)",
     )
     parser.add_argument(
         "--known_noise",
@@ -1431,6 +1506,17 @@ def parse_args():
         help="Number of independent trials (each uses a different random seed). Default: 1",
     )
     parser.add_argument(
+        "--seed_offset",
+        type=int,
+        default=None,
+        help=(
+            "Seed for the first trial, independent of --trial_offset. Unlike --trial_offset "
+            "this does NOT merge with an existing results file; it writes a separate "
+            "_seed<N>_results.json shard, so seeds can be run as parallel processes and "
+            "combined afterwards with scripts/merge_seed_runs.py. Default: use --trial_offset"
+        ),
+    )
+    parser.add_argument(
         "--trial_offset",
         type=int,
         default=0,
@@ -1444,6 +1530,16 @@ def parse_args():
             "Fixed beta for UCB acquisition function (SO only). "
             "Suggested values: 0.1, 0.5, 1.0, 2.0. "
             "Default: None (uses Srinivas schedule via get_beta_t)."
+        ),
+    )
+    parser.add_argument(
+        "--max_acqf_retries",
+        type=int,
+        default=3,
+        help=(
+            "Attempts at optimize_acqf per BO step before giving up. Each retry "
+            "resamples the acquisition function, which usually clears transient "
+            "NaN gradients / infeasible candidates. Default: 3"
         ),
     )
     parser.add_argument(

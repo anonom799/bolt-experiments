@@ -1,0 +1,27 @@
+\begin{table}[h]
+  \centering
+  \footnotesize
+  \caption{Mean wall-clock time per BO step --- parallelism configuration problems.}
+  \label{tab:wall_clock_pco}
+  \begin{tabular}{lrrr}
+    \toprule
+    \textbf{Method} & \textbf{\texttt{PCO-16}} & \textbf{\texttt{PCO-32}} & \textbf{\texttt{PCO-64}} \\
+    \midrule
+    RANDOM & 0.00135\,s & 0.00117\,s & 0.00119\,s \\
+    cTS & 3.17\,s & 1.49\,s & 3.23\,s \\
+    dSCBO & 1.6\,s & 0.801\,s & 0.88\,s \\
+    TPE & 0.016\,s & 0.0108\,s & 0.0112\,s \\
+    CMAES & 0.00296\,s & 0.00252\,s & 0.00256\,s \\
+    LogEIC & 2.7\,s & 1.77\,s & 3.07\,s \\
+    LogNEIC & 2.73\,s & 2.14\,s & 3.25\,s \\
+    LogNEIC+prior & 7.79\,s & 7.71\,s & 7.66\,s \\
+    UCB-C & 3.6\,s & 2.57\,s & 2.68\,s \\
+    UCB-C+prior & 7.68\,s & 6.84\,s & 5.73\,s \\
+    cKG & 4.28\,s & 2.52\,s & 3.42\,s \\
+    cKG+prior & 8.19\,s & 6.92\,s & 8.46\,s \\
+    ADMMBO & 3.13\,s & 1.95\,s & 2.81\,s \\
+    ADMMBO+prior & 7.94\,s & 7.09\,s & 7.55\,s \\
+    CMES-IBO & 2.94\,s & 1.19\,s & 1.89\,s \\
+    \bottomrule
+  \end{tabular}
+\end{table}

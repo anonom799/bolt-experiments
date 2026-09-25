@@ -44,6 +44,15 @@ HPO_TARGET_OPTIONS = [
 
 sns.set_theme(style="white", context="paper", font_scale=1.3)
 
+# One colormap for every landscape figure (HPO heatmap and DM ternaries), so a
+# reader can compare panels across figures. Call sites may still override it.
+LANDSCAPE_CMAP = sns.color_palette("mako", as_cmap=True)
+
+# The noise scatter sits mostly at low std_math, i.e. in mako's near-black end,
+# where its semi-transparent markers turn muddy; start it at 20% so the
+# low-noise points stay dark blue.
+NOISE_CMAP = mcolors.ListedColormap(LANDSCAPE_CMAP(np.linspace(0.2, 1, 256)))
+
 # ============================================================
 # Shared helpers
 # ============================================================
@@ -244,7 +253,7 @@ def plot_rank_rank_scatter(
 
 
 def plot_hpo_landscape(
-    ax: plt.Axes, prob_hpo: bolt.HPO, cmap="viridis"
+    ax: plt.Axes, prob_hpo: bolt.HPO, cmap=LANDSCAPE_CMAP
 ) -> None:
     """2D heatmap of HPO: sweep lr × dropout, fix all other dims at known optimizer."""
     # _optimizers = (lr=0.311, batch=2, rank=4, alpha=2, dropout=0.871, layers=30, target=1)
@@ -319,7 +328,7 @@ def _dmo_ternary_draw(
     fixed_other: np.ndarray,
     vmin=None,
     vmax=None,
-    cmap="plasma",
+    cmap=LANDSCAPE_CMAP,
 ):
     """Draw pre-computed DM ternary values onto ax. Returns im."""
     cart = ternary_to_cart(grid)
@@ -343,7 +352,7 @@ def plot_dmo_ternary(
     n_grid: int = 60,
     obj_idx=0,
     obj_label: str = "Score",
-    cmap="plasma",
+    cmap=LANDSCAPE_CMAP,
 ) -> None:
     """Ternary heatmap for one DM phase group; fix the other at best observed point."""
     grid, Y = _dmo_ternary_Y(prob_dm, phase_idx, fixed_other, n_grid, obj_idx)
@@ -472,7 +481,10 @@ def _noise_predict(
     ]
     X = torch.tensor(noise_df[prop_cols].values, dtype=torch.double)
     with torch.no_grad():
-        return prob_dmhet._evaluate_noise(X).squeeze(-1).numpy() / 0.1
+        # the problem's _evaluate_noise returns the std of the 3-benchmark
+        # average; this diagnostic is about the math emulator itself, so call it
+        # directly, on the full 6-d mixture as DMCurriculumHet does
+        return prob_dmhet.noise_func.evaluate_true(X).numpy()
 
 
 def plot_noise_scatter(
@@ -588,6 +600,91 @@ def plot_pred_vs_actual(
 # ============================================================
 
 
+# ============================================================
+# Paper figure
+# ============================================================
+
+# The frozen-phase mixtures behind Figure "2D slices of emulator landscapes".
+# They were originally picked from out_val_sobol_qwen4b (the s0 row is the best
+# mean score, the s1 row a top-decile sample), but that selection moves whenever
+# the val set is regenerated, so the two rows are pinned here instead. Both are
+# still present in the val parquet; the _s0/_s1 suffixes are kept so the
+# filenames keep matching the \includegraphics paths in the paper.
+PAPER_SLICE_S0_PHASE2 = (0.126922, 0.818228, 0.054850)
+PAPER_SLICE_S1_PHASE1 = (0.166744, 0.164040, 0.669215)
+PAPER_SLICE_S1_PHASE2 = (0.810216, 0.081757, 0.108027)
+
+
+def plot_paper_slices(out_dir: Path, prob_hpo, prob_dmo, cmap) -> None:
+    """Just the four panels the paper's landscape-slices figure includes."""
+    fig, ax = plt.subplots(1, 1, figsize=(5, 4.5))
+    plot_hpo_landscape(ax, prob_hpo, cmap=cmap)
+    fig.tight_layout()
+    fig.savefig(out_dir / "emulator_landscape_hpo.pdf", bbox_inches="tight")
+    plt.close(fig)
+    print("  saved emulator_landscape_hpo.pdf")
+
+    panels = [
+        ("ifeval", "IFEval", 0, 0, PAPER_SLICE_S1_PHASE2, "p1_s1"),
+        ("math", "MATH-500", 1, 0, PAPER_SLICE_S0_PHASE2, "p1_s0"),
+        ("code", "MBPP+", 2, 1, PAPER_SLICE_S1_PHASE1, "p2_s1"),
+    ]
+    for obj_name, obj_label, obj_idx, phase_idx, fixed_other, tag in panels:
+        fig, ax = plt.subplots(1, 1, figsize=(5, 4.5))
+        plot_dmo_ternary(
+            ax,
+            prob_dmo,
+            phase_idx=phase_idx,
+            fixed_other=np.asarray(fixed_other, dtype=float),
+            obj_idx=obj_idx,
+            obj_label=obj_label,
+            cmap=cmap,
+        )
+        fig.tight_layout()
+        fname = f"emulator_ternary_{obj_name}_{tag}.pdf"
+        fig.savefig(out_dir / fname, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  saved {fname}")
+
+
+def save_rank_rank(out_dir: Path, prob_hpo, prob_dmo, args) -> None:
+    print("Plotting rank-rank scatter...")
+    fig, axes = plt.subplots(1, 4, figsize=(13, 3))
+    plot_rank_rank_scatter(
+        axes[0],
+        axes[1:],
+        prob_hpo,
+        prob_dmo,
+        args.hpo_val_path,
+        args.dm_val_path,
+    )
+    fig.tight_layout()
+    fig.savefig(out_dir / "emulator_rank_rank.pdf", bbox_inches="tight")
+    plt.close(fig)
+    print("  saved emulator_rank_rank.pdf")
+
+
+def save_multifidelity(out_dir: Path) -> None:
+    print("Plotting multi-fidelity figures...")
+    fig, (ax_step, ax_model) = plt.subplots(1, 2, figsize=(6.5, 3))
+    plot_mf_step_error(ax_step)
+    plot_mf_model_histogram(ax_model)
+    fig.tight_layout()
+    fig.savefig(out_dir / "emulator_multifidelity.pdf", bbox_inches="tight")
+    plt.close(fig)
+    print("  saved emulator_multifidelity.pdf")
+
+
+def save_pareto(out_dir: Path, pf_path: Path) -> None:
+    print("Plotting Pareto front...")
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4))
+    plot_pareto_front(axes, pf_path)
+    fig.tight_layout()
+    fig.savefig(out_dir / "emulator_pareto.pdf", bbox_inches="tight")
+    plt.close(fig)
+    print("  saved emulator_pareto.pdf")
+
+
 def parse_args() -> argparse.Namespace:
     # The diagnostics data ships with this repo under `data/`.
     _data_root = REPO_ROOT / "data"
@@ -596,6 +693,20 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--out_dir", type=Path, default=None)
+    p.add_argument(
+        "--paper_landscape_only",
+        action="store_true",
+        help="for the landscape figures, draw only the four slices the paper "
+        "includes instead of every sampled ternary; the other figures are "
+        "plotted either way",
+    )
+    p.add_argument(
+        "--validation_dir",
+        type=Path,
+        default=None,
+        help="output dir for the rank-rank, multi-fidelity and noise model "
+        "figures; defaults to --out_dir",
+    )
     p.add_argument(
         "--hpo_val_path",
         type=Path,
@@ -606,6 +717,8 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=_data_root / "data_mixture/out_val_sobol_qwen4b/data.parquet",
     )
+    # The DM emulator's Pareto front, precomputed on a dense grid of mixtures.
+    # It has to be rebuilt whenever the DM emulator changes.
     p.add_argument(
         "--pf_path",
         type=Path,
@@ -614,8 +727,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--noise_targets_path",
         type=Path,
-        default=_data_root
-        / "data_mixture/out_qwen4b_samples/noise_targets.csv",
+        default=_data_root / "data_mixture/out_qwen4b_samples/noise_targets.csv",
     )
     return p.parse_args()
 
@@ -634,220 +746,191 @@ def main() -> None:
     prob_dmo = bolt.DMCurriculumMO(noise_std=None)
     prob_dmhet = bolt.DMCurriculumHet(noise_std=None)
 
-    # Find DM val points to fix as frozen phase in ternaries
-    df_dm = pd.read_parquet(args.dm_val_path)
-    _obj_cols = [
-        "eval/ifeval/accuracy/mean",
-        "eval/minerva_math500/accuracy/mean",
-        "eval/mbpp_plus_instruct/accuracy/mean",
-    ]
+    val_dir = args.validation_dir or out_dir
 
-    # best score
-    best_dm = df_dm.loc[df_dm[_obj_cols].mean(axis=1).idxmax()]
+    if args.paper_landscape_only:
+        print("Plotting paper landscape slices...")
+        plot_paper_slices(out_dir, prob_hpo, prob_dmo, LANDSCAPE_CMAP)
+    else:
+        # Find DM val points to fix as frozen phase in ternaries
+        df_dm = pd.read_parquet(args.dm_val_path)
+        _obj_cols = [
+            "eval/ifeval/accuracy/mean",
+            "eval/minerva_math500/accuracy/mean",
+            "eval/mbpp_plus_instruct/accuracy/mean",
+        ]
 
-    # # 90 percentile
-    # mean_scores = df_dm[_obj_cols].mean(axis=1)
-    # best_dm = df_dm.loc[
-    #     (mean_scores - mean_scores.quantile(0.90)).abs().idxmin()
-    # ]
+        # best score
+        best_dm = df_dm.loc[df_dm[_obj_cols].mean(axis=1).idxmax()]
 
-    # sample from top 10%
-    mean_scores = df_dm[_obj_cols].mean(axis=1)
-    top10 = df_dm[mean_scores >= mean_scores.quantile(0.80)]
-    sample_rows = [best_dm] + [
-        row for _, row in top10.sample(3, random_state=0).iterrows()
-    ]
+        # # 90 percentile
+        # mean_scores = df_dm[_obj_cols].mean(axis=1)
+        # best_dm = df_dm.loc[
+        #     (mean_scores - mean_scores.quantile(0.90)).abs().idxmin()
+        # ]
 
-    # --- Figure 1: Rank-rank scatter ---
-    print("Plotting rank-rank scatter...")
-    fig1, axes1 = plt.subplots(1, 4, figsize=(13, 3))
-    plot_rank_rank_scatter(
-        axes1[0],
-        axes1[1:],
-        prob_hpo,
-        prob_dmo,
-        args.hpo_val_path,
-        args.dm_val_path,
-    )
-    fig1.tight_layout()
-    fig1.savefig(out_dir / "emulator_rank_rank.pdf", bbox_inches="tight")
-    plt.close(fig1)
-    print("  saved emulator_rank_rank.pdf")
+        # sample from top 10%
+        mean_scores = df_dm[_obj_cols].mean(axis=1)
+        top10 = df_dm[mean_scores >= mean_scores.quantile(0.80)]
+        sample_rows = [best_dm] + [
+            row for _, row in top10.sample(3, random_state=0).iterrows()
+        ]
 
-    # --- Figure 2: HPO landscape (standalone) ---
-    print("Plotting HPO landscape...")
+        # --- Figure 2: HPO landscape (standalone) ---
+        print("Plotting HPO landscape...")
 
-    cmap = sns.cubehelix_palette(
-        start=3,
-        rot=-0.3,
-        hue=1.7,
-        dark=0.15,
-        light=0.8,
-        gamma=1.3,
-        as_cmap=True,
-        reverse=True,
-    )
+        cmap = LANDSCAPE_CMAP
 
-    fig_hpo_land, ax_hpo_land = plt.subplots(1, 1, figsize=(5, 4.5))
-    plot_hpo_landscape(ax_hpo_land, prob_hpo, cmap=cmap)
+        fig_hpo_land, ax_hpo_land = plt.subplots(1, 1, figsize=(5, 4.5))
+        plot_hpo_landscape(ax_hpo_land, prob_hpo, cmap=cmap)
 
-    fig_hpo_land.tight_layout()
-    fig_hpo_land.savefig(
-        out_dir / "emulator_landscape_hpo.pdf", bbox_inches="tight"
-    )
-    plt.close(fig_hpo_land)
-
-    print("  saved emulator_landscape_hpo.pdf")
-    # cmap = sns.color_palette("viridis", as_cmap=True)
-
-    obj_names = ["ifeval", "math", "code"]
-    obj_labels = ["IFEval", "MATH-500", "MBPP+"]
-
-    for s_idx, best_dm in enumerate(sample_rows):
-        fixed_phase1 = best_dm[
-            ["if_prop1", "math_prop1", "code_prop1"]
-        ].values.astype(float)
-        fixed_phase2 = best_dm[
-            ["if_prop2", "math_prop2", "code_prop2"]
-        ].values.astype(float)
-        phase_configs = [(0, fixed_phase2, "p1"), (1, fixed_phase1, "p2")]
-        tag = f"_s{s_idx}"
-
-        # --- Figure 2b: Combined landscape (HPO + DM ternaries) ---
-        print(f"Plotting combined landscape slices (sample {s_idx})...")
-        fig2, axes2 = plt.subplots(1, 3, figsize=(15, 4.5))
-        plot_hpo_landscape(axes2[0], prob_hpo)
-        plot_dmo_ternary(
-            axes2[1], prob_dm, phase_idx=0, fixed_other=fixed_phase2
+        fig_hpo_land.tight_layout()
+        fig_hpo_land.savefig(
+            out_dir / "emulator_landscape_hpo.pdf", bbox_inches="tight"
         )
-        plot_dmo_ternary(
-            axes2[2], prob_dm, phase_idx=1, fixed_other=fixed_phase1
-        )
-        fig2.tight_layout()
-        fig2.savefig(
-            out_dir / f"emulator_landscape{tag}.pdf", bbox_inches="tight"
-        )
-        plt.close(fig2)
-        print(f"  saved emulator_landscape{tag}.pdf")
+        plt.close(fig_hpo_land)
 
-        # --- Figure 2c–e: Per-objective ternary plots ---
-        for obj_idx, (obj_name, obj_label) in enumerate(
-            zip(obj_names, obj_labels)
-        ):
-            # Paired figure
-            fig_t, axes_t = plt.subplots(1, 2, figsize=(10, 4.5))
+        print("  saved emulator_landscape_hpo.pdf")
+        # cmap = sns.color_palette("viridis", as_cmap=True)
+
+        obj_names = ["ifeval", "math", "code"]
+        obj_labels = ["IFEval", "MATH-500", "MBPP+"]
+
+        for s_idx, best_dm in enumerate(sample_rows):
+            fixed_phase1 = best_dm[
+                ["if_prop1", "math_prop1", "code_prop1"]
+            ].values.astype(float)
+            fixed_phase2 = best_dm[
+                ["if_prop2", "math_prop2", "code_prop2"]
+            ].values.astype(float)
+            phase_configs = [(0, fixed_phase2, "p1"), (1, fixed_phase1, "p2")]
+            tag = f"_s{s_idx}"
+
+            # --- Figure 2b: Combined landscape (HPO + DM ternaries) ---
+            print(f"Plotting combined landscape slices (sample {s_idx})...")
+            fig2, axes2 = plt.subplots(1, 3, figsize=(15, 4.5))
+            plot_hpo_landscape(axes2[0], prob_hpo)
             plot_dmo_ternary(
-                axes_t[0],
-                prob_dmo,
-                phase_idx=0,
-                fixed_other=fixed_phase2,
-                obj_idx=obj_idx,
-                obj_label=obj_label,
-                cmap=cmap,
+                axes2[1], prob_dm, phase_idx=0, fixed_other=fixed_phase2
             )
             plot_dmo_ternary(
-                axes_t[1],
-                prob_dmo,
-                phase_idx=1,
-                fixed_other=fixed_phase1,
-                obj_idx=obj_idx,
-                obj_label=obj_label,
-                cmap=cmap,
+                axes2[2], prob_dm, phase_idx=1, fixed_other=fixed_phase1
             )
-            fig_t.suptitle(f"DM landscape — {obj_label}", fontsize=12, y=1.0)
-            fig_t.tight_layout()
-            fname = f"emulator_ternary_{obj_name}{tag}.pdf"
-            fig_t.savefig(out_dir / fname, bbox_inches="tight")
-            plt.close(fig_t)
-            print(f"  saved {fname}")
+            fig2.tight_layout()
+            fig2.savefig(
+                out_dir / f"emulator_landscape{tag}.pdf", bbox_inches="tight"
+            )
+            plt.close(fig2)
+            print(f"  saved emulator_landscape{tag}.pdf")
 
-            # Individual figures (one per phase)
-            for phase_idx, fixed_other, phase_tag in phase_configs:
-                fig_i, ax_i = plt.subplots(1, 1, figsize=(5, 4.5))
+            # --- Figure 2c–e: Per-objective ternary plots ---
+            for obj_idx, (obj_name, obj_label) in enumerate(
+                zip(obj_names, obj_labels)
+            ):
+                # Paired figure
+                fig_t, axes_t = plt.subplots(1, 2, figsize=(10, 4.5))
                 plot_dmo_ternary(
-                    ax_i,
+                    axes_t[0],
                     prob_dmo,
-                    phase_idx=phase_idx,
-                    fixed_other=fixed_other,
+                    phase_idx=0,
+                    fixed_other=fixed_phase2,
                     obj_idx=obj_idx,
                     obj_label=obj_label,
                     cmap=cmap,
                 )
-                fig_i.tight_layout()
-                fname_i = f"emulator_ternary_{obj_name}_{phase_tag}{tag}.pdf"
-                fig_i.savefig(out_dir / fname_i, bbox_inches="tight")
-                plt.close(fig_i)
-                print(f"  saved {fname_i}")
+                plot_dmo_ternary(
+                    axes_t[1],
+                    prob_dmo,
+                    phase_idx=1,
+                    fixed_other=fixed_phase1,
+                    obj_idx=obj_idx,
+                    obj_label=obj_label,
+                    cmap=cmap,
+                )
+                fig_t.suptitle(f"DM landscape — {obj_label}", fontsize=12, y=1.0)
+                fig_t.tight_layout()
+                fname = f"emulator_ternary_{obj_name}{tag}.pdf"
+                fig_t.savefig(out_dir / fname, bbox_inches="tight")
+                plt.close(fig_t)
+                print(f"  saved {fname}")
 
-        # --- Mean-objective ternary (average of IFEval, MATH-500, MBPP+) ---
-        fig_m, axes_m = plt.subplots(1, 2, figsize=(10, 4.5))
-        plot_dmo_ternary(
-            axes_m[0],
-            prob_dmo,
-            phase_idx=0,
-            fixed_other=fixed_phase2,
-            obj_idx=None,
-            obj_label="Mean score",
-            cmap=cmap,
-        )
-        plot_dmo_ternary(
-            axes_m[1],
-            prob_dmo,
-            phase_idx=1,
-            fixed_other=fixed_phase1,
-            obj_idx=None,
-            obj_label="Mean score",
-            cmap=cmap,
-        )
-        fig_m.suptitle("DM landscape — Mean objective", fontsize=12, y=1.0)
-        fig_m.tight_layout()
-        fname_m = f"emulator_ternary_mean{tag}.pdf"
-        fig_m.savefig(out_dir / fname_m, bbox_inches="tight")
-        plt.close(fig_m)
-        print(f"  saved {fname_m}")
+                # Individual figures (one per phase)
+                for phase_idx, fixed_other, phase_tag in phase_configs:
+                    fig_i, ax_i = plt.subplots(1, 1, figsize=(5, 4.5))
+                    plot_dmo_ternary(
+                        ax_i,
+                        prob_dmo,
+                        phase_idx=phase_idx,
+                        fixed_other=fixed_other,
+                        obj_idx=obj_idx,
+                        obj_label=obj_label,
+                        cmap=cmap,
+                    )
+                    fig_i.tight_layout()
+                    fname_i = f"emulator_ternary_{obj_name}_{phase_tag}{tag}.pdf"
+                    fig_i.savefig(out_dir / fname_i, bbox_inches="tight")
+                    plt.close(fig_i)
+                    print(f"  saved {fname_i}")
 
-        for phase_idx, fixed_other, phase_tag in phase_configs:
-            fig_mi, ax_mi = plt.subplots(1, 1, figsize=(5, 4.5))
+            # --- Mean-objective ternary (average of IFEval, MATH-500, MBPP+) ---
+            fig_m, axes_m = plt.subplots(1, 2, figsize=(10, 4.5))
             plot_dmo_ternary(
-                ax_mi,
+                axes_m[0],
                 prob_dmo,
-                phase_idx=phase_idx,
-                fixed_other=fixed_other,
+                phase_idx=0,
+                fixed_other=fixed_phase2,
                 obj_idx=None,
                 obj_label="Mean score",
+                cmap=cmap,
             )
-            fig_mi.tight_layout()
-            fname_mi = f"emulator_ternary_mean_{phase_tag}{tag}.pdf"
-            fig_mi.savefig(out_dir / fname_mi, bbox_inches="tight")
-            plt.close(fig_mi)
-            print(f"  saved {fname_mi}")
+            plot_dmo_ternary(
+                axes_m[1],
+                prob_dmo,
+                phase_idx=1,
+                fixed_other=fixed_phase1,
+                obj_idx=None,
+                obj_label="Mean score",
+                cmap=cmap,
+            )
+            fig_m.suptitle("DM landscape — Mean objective", fontsize=12, y=1.0)
+            fig_m.tight_layout()
+            fname_m = f"emulator_ternary_mean{tag}.pdf"
+            fig_m.savefig(out_dir / fname_m, bbox_inches="tight")
+            plt.close(fig_m)
+            print(f"  saved {fname_m}")
+
+            for phase_idx, fixed_other, phase_tag in phase_configs:
+                fig_mi, ax_mi = plt.subplots(1, 1, figsize=(5, 4.5))
+                plot_dmo_ternary(
+                    ax_mi,
+                    prob_dmo,
+                    phase_idx=phase_idx,
+                    fixed_other=fixed_other,
+                    obj_idx=None,
+                    obj_label="Mean score",
+                )
+                fig_mi.tight_layout()
+                fname_mi = f"emulator_ternary_mean_{phase_tag}{tag}.pdf"
+                fig_mi.savefig(out_dir / fname_mi, bbox_inches="tight")
+                plt.close(fig_mi)
+                print(f"  saved {fname_mi}")
+
+    # --- Figure 1: Rank-rank scatter ---
+    save_rank_rank(val_dir, prob_hpo, prob_dmo, args)
 
     # --- Figure 3: Multi-fidelity ---
-    print("Plotting multi-fidelity figures...")
-    fig3, (ax_step, ax_model) = plt.subplots(1, 2, figsize=(6.5, 3))
-    plot_mf_step_error(ax_step)
-    plot_mf_model_histogram(ax_model)
-    fig3.tight_layout()
-    fig3.savefig(out_dir / "emulator_multifidelity.pdf", bbox_inches="tight")
-    plt.close(fig3)
-    print("  saved emulator_multifidelity.pdf")
+    save_multifidelity(val_dir)
 
     # --- Figure 4: Pareto front ---
-    print("Plotting Pareto front...")
-    fig4, axes4 = plt.subplots(1, 3, figsize=(13, 4))
-    plot_pareto_front(axes4, args.pf_path)
-    fig4.tight_layout()
-    fig4.savefig(out_dir / "emulator_pareto.pdf", bbox_inches="tight")
-    plt.close(fig4)
-    print("  saved emulator_pareto.pdf")
+    save_pareto(out_dir, args.pf_path)
 
     # --- Figure 5: Noise model diagnostics ---
     print("Plotting noise model diagnostics...")
     noise_df = pd.read_csv(args.noise_targets_path)
-    plot_noise_scatter(noise_df, prob_dmhet, out_dir, cmap=cmap)
-    plot_pred_vs_actual(noise_df, prob_dmhet, out_dir)
+    plot_noise_scatter(noise_df, prob_dmhet, val_dir, cmap=NOISE_CMAP)
+    plot_pred_vs_actual(noise_df, prob_dmhet, val_dir)
 
-    print(f"\nAll figures saved to {out_dir}")
+    print(f"\nAll figures saved to {out_dir} and {val_dir}")
 
 
 if __name__ == "__main__":

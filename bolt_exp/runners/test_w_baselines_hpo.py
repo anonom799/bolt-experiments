@@ -39,6 +39,8 @@ import math
 import time
 import warnings
 
+from bolt_exp import emulator_version
+
 warnings.filterwarnings("ignore")
 
 import numpy as np
@@ -1020,14 +1022,20 @@ def main(args):
     print(f"initial_random_samples: {args.initial_random_samples}")
     print(f"trials: {args.trials}")
 
+    # --noise_std unset: let each problem class use its own default noise std
+    noise_kwargs = {} if args.noise_std is None else {"noise_std": args.noise_std}
+
     if args.problem == "hpo":
-        prob = HPO(noise_std=0.001, negate=False)
+        prob = HPO(negate=False, **noise_kwargs)
     elif args.problem == "hpo_fd_step":
-        prob = HPOMultiFidelityToken(noise_std=0.001, negate=False)
+        prob = HPOMultiFidelityToken(negate=False, **noise_kwargs)
     elif args.problem == "hpo_fd_model":
-        prob = HPOMultiFidelityModel(noise_std=0.001, negate=False)
+        prob = HPOMultiFidelityModel(negate=False, **noise_kwargs)
     else:
         raise ValueError(f"Unknown problem: {args.problem}")
+
+    noise_std = prob.noise_std
+    print("noise std:", noise_std)
 
     method = args.method
     problem_name = args.problem
@@ -1098,11 +1106,13 @@ def main(args):
         "problem": problem_name,
         "iterations": args.iterations,
         "initial_random_samples": args.initial_random_samples,
+        "noise_std": noise_std,
         "num_trials": args.trials,
+        "emulator_versions": emulator_version.emulator_versions_for(prob),
         "trials": all_trial_results,
     }
     info_tag = f"_{args.info}" if args.info else ""
-    results_dir = REPO_ROOT / "results" / "hpo"
+    results_dir = REPO_ROOT / "results" / f"hpo{args.folder_prefix}"
     results_dir.mkdir(parents=True, exist_ok=True)
     output_file = (
         results_dir
@@ -1124,11 +1134,23 @@ def parse_args():
         choices=["hpo", "hpo_fd_step", "hpo_fd_model"],
         help=(
             "Problem to optimize. "
-            "'hpo': single-fidelity (10D); "
+            "'hpo': single-fidelity (7D); "
             "'hpo_fd_step': continuous fidelity (training tokens); "
             "'hpo_fd_model': discrete 2-level fidelity (model size). "
             "Default: hpo"
         ),
+    )
+    parser.add_argument(
+        "--noise_std",
+        type=float,
+        default=None,
+        help="Observation noise std for the emulator. Default: the problem class's own default",
+    )
+    parser.add_argument(
+        "--folder_prefix",
+        type=str,
+        default="",
+        help="Suffix appended to the results subfolder name, e.g. 'hpo{folder_prefix}'. Default: '' (results/hpo)",
     )
     parser.add_argument(
         "--method",

@@ -1,0 +1,34 @@
+# Methods config for plot_real_vs_emulated.py (HPO: real vs emulated).
+#
+# There's no heteroscedastic HPO emulator, so only two sources are listed.
+title: "HPO: real vs emulated"
+n_iterations: 50
+
+source_labels:
+  real: Real
+  emulated: "Emulated (HPO)"
+
+sources:
+  real: results/hpo_real
+  emulated: results/hpo
+
+methods:
+  - label: RANDOM
+    files:
+      real: hpo_real_random_5trials_50iterations_results.json
+      emulated: hpo_random_10trials_200iterations_results.json
+
+  - label: TS
+    files:
+      real: hpo_real_ts_5trials_50iterations_results.json
+      emulated: hpo_ts_10trials_200iterations_results.json
+
+  - label: LogNEI
+    files:
+      real: hpo_real_lognei_5trials_50iterations_results.json
+      emulated: hpo_qnei_10trials_200iterations_results.json
+
+  - label: TPE
+    files:
+      real: hpo_real_tpe_5trials_50iterations_results.json
+      emulated: hpo_tpe_10trials_200iterations_results.json

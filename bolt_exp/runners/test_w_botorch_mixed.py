@@ -4,9 +4,11 @@ import time
 import math
 import warnings
 
+from bolt_exp import emulator_version
+
 warnings.filterwarnings("ignore")
 
-MAX_ACQF_RETRIES = 3
+MAX_ACQF_RETRIES = 10
 
 import numpy as np
 import pandas as pd
@@ -57,6 +59,17 @@ from rich import print
 from bolt_exp import REPO_ROOT
 
 MC_SAMPLES = 128
+
+
+def device_info(dev: str) -> dict:
+    """Hardware the run executed on, recorded so timings stay comparable across machines."""
+    if dev == "cuda":
+        gpu_name = torch.cuda.get_device_name(0)
+    elif dev == "mps":
+        gpu_name = "mps"
+    else:
+        gpu_name = None
+    return {"device": dev, "gpu_name": gpu_name}
 
 
 def get_discrete_dims_dict(
@@ -155,7 +168,9 @@ def get_beta_t(n_step: int, n_var_dim: int) -> float:
     """
 
     # beta = 50.0 * np.log(n_var_dim * (n_step + 1) ** 2 * np.pi**2 / 6.0 / 0.1) / 15.0
-    beta = 2.0 * np.log(n_var_dim * (n_step + 1) ** 2 * np.pi**2 / 6.0 / 0.1)  # Srinivas  with delta=0.1
+    # Loosely based on Srinivas et al. (2010), with edits: their Theorem 1 uses
+    # |D|, the candidate set size, where this passes the input dimension. delta=0.1.
+    beta = 2.0 * np.log(n_var_dim * (n_step + 1) ** 2 * np.pi**2 / 6.0 / 0.1)
 
     return beta
 
@@ -477,19 +492,28 @@ def main(args):
     else:
         dev = "cpu"
 
+    dev_info = device_info(dev)
+    print("device:", dev_info["device"], "|", dev_info["gpu_name"])
+
     dtype = torch.float32 if dev in ("mps", "cpu") else torch.double
     torch.set_default_dtype(dtype)
 
+    # --noise_std unset: let each problem class use its own default noise std
+    noise_kwargs = {} if args.noise_std is None else {"noise_std": args.noise_std}
+
     if args.problem == "hpo":
-        prob = HPO(noise_std=0.001, negate=False)
+        prob = HPO(negate=False, **noise_kwargs)
     elif args.problem == "hpo_fd_step":
-        prob = HPOMultiFidelityToken(noise_std=0.001, negate=False)
+        prob = HPOMultiFidelityToken(negate=False, **noise_kwargs)
     elif args.problem == "hpo_fd_model":
-        prob = HPOMultiFidelityModel(noise_std=0.001, negate=False)
+        prob = HPOMultiFidelityModel(negate=False, **noise_kwargs)
     elif args.problem == "dm_curriculum":
-        prob = DMCurriculum(noise_std=0.001, negate=False)
+        prob = DMCurriculum(negate=False, **noise_kwargs)
     else:
         raise ValueError(f"Unknown problem {args.problem}")
+
+    noise_std = prob.noise_std
+    print("noise std:", noise_std)
 
     prob.to(device=dev, dtype=dtype)
 
@@ -505,13 +529,17 @@ def main(args):
     BO_iterations = args.iterations
     all_trial_results = []
 
+    # --seed_offset lets seeds be run as separate parallel processes (see --help)
+    seed_base = 0 if args.seed_offset is None else args.seed_offset
+
     for trial in range(args.trials):
+        seed = trial + seed_base
         print(f"\n{'='*60}")
-        print(f"Trial {trial + 1}/{args.trials}  (seed={trial})")
+        print(f"Trial {trial + 1}/{args.trials}  (seed={seed})")
         print(f"{'='*60}")
 
-        rng = np.random.default_rng(trial)
-        torch.manual_seed(trial)
+        rng = np.random.default_rng(seed)
+        torch.manual_seed(seed)
 
         print("generating initial data...")
         train_x, train_y = generate_initial_data(
@@ -605,7 +633,7 @@ def main(args):
             log_best_inference_regret_all.append(math.log(max(prob._optimal_value - _best_rec_true_running, 1e-8)))
 
             if args.acq_fn == "ts":
-                candidate = thompson_sampling_candidate(model, bounds, discrete_dims)
+                candidate = thompson_sampling_candidate(model, bounds, discrete_dims, num_candidates=args.ts_num_candidates)
                 acq_value = torch.zeros(1, device=bounds.device, dtype=bounds.dtype)
             else:
                 beta = args.ucb_beta if args.ucb_beta is not None else get_beta_t(itr, prob.dim)
@@ -756,8 +784,9 @@ def main(args):
         all_trial_results.append(
             {
                 "trial": trial,
-                "seed": trial,
+                "seed": seed,
                 "time_seconds": t1 - t0,
+                **dev_info,
                 "best_y_all": best_y_all,
                 "rec_x_all": rec_x_all,
                 "rec_true_all": rec_true_all,
@@ -779,10 +808,14 @@ def main(args):
         )
 
     results = {
+        "problem": args.problem,
         "acq_fn": args.acq_fn,
         "iterations": BO_iterations,
         "initial_random_samples": args.initial_random_samples,
+        "noise_std": noise_std,
         "num_trials": args.trials,
+        **dev_info,
+        "emulator_versions": emulator_version.emulator_versions_for(prob),
         "trials": all_trial_results,
     }
     if args.problem in ("hpo_fd_step", "hpo_fd_model"):
@@ -792,12 +825,16 @@ def main(args):
     info_tag = f"_{args.info}" if args.info else ""
     cost_tag = f"_cost{args.cost_scale:g}" if args.problem in ("hpo_fd_step", "hpo_fd_model") else ""
     beta_tag = f"_beta{args.ucb_beta:g}" if args.acq_fn == "ucb" and args.ucb_beta is not None else ""
-    results_dir = REPO_ROOT / "results" / "hpo"
+    # --results_folder names the subfolder outright; otherwise it is hpo{--folder_prefix}
+    folder = args.results_folder or f"hpo{args.folder_prefix}"
+    results_dir = REPO_ROOT / "results" / folder
     results_dir.mkdir(parents=True, exist_ok=True)
 
+    # per-seed shards get their own filename so parallel runs never collide
+    seed_tag = "" if args.seed_offset is None else f"_seed{args.seed_offset}"
     output_file = (
         results_dir
-        / f"{args.problem}_{args.acq_fn}_{args.trials}trials_{args.iterations}iterations{cost_tag}{beta_tag}{info_tag}_results.json"
+        / f"{args.problem}_{args.acq_fn}_{args.trials}trials_{args.iterations}iterations{cost_tag}{beta_tag}{info_tag}{seed_tag}_results.json"
     )
 
     with open(output_file, "w") as f:
@@ -814,6 +851,35 @@ def parse_args():
         default="hpo",
         choices=["hpo", "hpo_fd_step", "hpo_fd_model", "dm_curriculum"],
         help="HPO problem to set. Default: hpo",
+    )
+    parser.add_argument(
+        "--seed_offset",
+        type=int,
+        default=None,
+        help=(
+            "Seed for the first trial. Writes a separate _seed<N>_results.json shard so "
+            "seeds can be run as parallel processes and combined afterwards with "
+            "scripts/merge_seed_runs.py. Default: 0"
+        ),
+    )
+    parser.add_argument(
+        "--noise_std",
+        type=float,
+        default=None,
+        help="Observation noise std for the emulator. Default: the problem class's own default",
+    )
+    parser.add_argument(
+        "--folder_prefix",
+        type=str,
+        default="",
+        help="Suffix appended to the results subfolder name, e.g. 'hpo{folder_prefix}'. Default: '' (results/hpo)",
+    )
+    parser.add_argument(
+        "--results_folder",
+        type=str,
+        default=None,
+        help="Results subfolder name, used verbatim (e.g. 'dm_mean_std' -> results/dm_mean_std). "
+        "Overrides --folder_prefix. Default: None (use hpo{folder_prefix})",
     )
     parser.add_argument(
         "--acq_fn",
@@ -876,6 +942,12 @@ def parse_args():
         type=float,
         default=None,
         help="Fixed beta for UCB. If not set, uses the Srinivas schedule (get_beta_t).",
+    )
+    parser.add_argument(
+        "--ts_num_candidates",
+        type=int,
+        default=2048,
+        help="Num candidates for TS. Default is 2048.",
     )
 
     args = parser.parse_args()

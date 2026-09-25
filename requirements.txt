@@ -10,7 +10,8 @@ scipy
 scikit-learn
 
 # Baselines
-optuna              # TPE, ASHA
+optuna              # TPE, ASHA, CMA-ES
+cmaes               # optuna CMA-ES sampler backend
 smac>=2.0           # BOHB
 pymoo               # NSGA-II / NSGA-III
 

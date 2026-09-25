@@ -12,42 +12,45 @@
       \midrule
       \multicolumn{2}{l}{\textit{HPO}} \\
       \cmidrule{1-2}
-      RANDOM & 0.00186\,s \\
-      TS & 10.8\,s \\
-      TPE & 0.0113\,s \\
-      LogEI & 13.5\,s \\
-      LogNEI & 12.9\,s \\
-      UCB & 12.5\,s \\
-      UCB(beta=10.0) & 12.8\,s \\
-      PES & 16.3\,s \\
-      MES & 17\,s \\
-      GIBBON & 14.6\,s \\
-      JES & 17.1\,s \\
-      UCB(beta=1.0) & 5.21\,s \\
-      UCB(beta=2.0) & 7.83\,s \\
-      UCB(beta=30.0) & 13.8\,s \\
-      UCB(beta=5.0) & 10.7\,s \\
+      RANDOM & 0.00184\,s \\
+      TS & 7.47\,s \\
+      TPE & 0.00987\,s \\
+      CMAES & 0.00299\,s \\
+      LogEI & 5.73\,s \\
+      LogNEI & 6.07\,s \\
+      UCB & 7.28\,s \\
+      UCB(beta=2.0) & 4.33\,s \\
+      PES & 13\,s \\
+      MES & 7.1\,s \\
+      GIBBON & 7.29\,s \\
+      JES & 8.48\,s \\
+      UCB(beta=0.5) & 3.44\,s \\
+      UCB(beta=1.0) & 4.21\,s \\
+      UCB(beta=10.0) & 6.7\,s \\
+      UCB(beta=30.0) & 7.91\,s \\
+      UCB(beta=5.0) & 5\,s \\
       \midrule
       \multicolumn{2}{l}{\textit{HPO-FD-Step}} \\
       \cmidrule{1-2}
-      RANDOM & 0.00654\,s \\
-      BOHB & 0.665\,s \\
-      LogEI & 17.6\,s \\
-      LogNEI & 15.8\,s \\
-      UCB & 22\,s \\
-      MF-MES & 15.8\,s \\
-      MF-GIBBON & 13.6\,s \\
+      RANDOM & 0.00608\,s \\
+      BOHB & 0.151\,s \\
+      LogEI & 9.94\,s \\
+      LogNEI & 11.7\,s \\
+      UCB & 27.6\,s \\
+      PES & 18.9\,s \\
+      MF-MES & 9.72\,s \\
+      MF-GIBBON & 8.99\,s \\
       \midrule
       \multicolumn{2}{l}{\textit{HPO-FD-Model}} \\
       \cmidrule{1-2}
-      RANDOM & 0.00525\,s \\
-      ASHA & 0.0175\,s \\
-      LogEI & 16.4\,s \\
-      LogNEI & 12.6\,s \\
-      UCB & 24.5\,s \\
-      PES & 41.7\,s \\
-      MF-MES & 29.4\,s \\
-      MF-GIBBON & 18.5\,s \\
+      RANDOM & 0.0039\,s \\
+      ASHA & 0.0111\,s \\
+      LogEI & 6.36\,s \\
+      LogNEI & 6.48\,s \\
+      UCB & 9.18\,s \\
+      PES & 16\,s \\
+      MF-MES & 7.69\,s \\
+      MF-GIBBON & 7.27\,s \\
       \bottomrule
     \end{tabular}
   \end{subtable}
@@ -62,53 +65,57 @@
       \midrule
       \multicolumn{2}{l}{\textit{DM}} \\
       \cmidrule{1-2}
-      RANDOM & 0.00509\,s \\
-      TS & 2.02\,s \\
-      KG & 21\,s \\
-      LogEI & 3.7\,s \\
-      LogNEI & 5.53\,s \\
-      LogNEI(q=5) & 17.1\,s \\
-      LogNEI(q=10) & 1.8\,min \\
-      UCB & 3.1\,s \\
-      UCB(beta=2.0) & 3.15\,s \\
-      PES & 7.03\,s \\
-      MES & 3.31\,s \\
-      MES(q=5) & 7.83\,s \\
-      MES(q=10) & 14.5\,s \\
-      GIBBON & 3.17\,s \\
-      GIBBON(q=5) & 21.4\,s \\
-      GIBBON(q=10) & 52.8\,s \\
-      JES & 4.1\,s \\
+      RANDOM & 0.00561\,s \\
+      TS & 1.9\,s \\
+      KG & 21.6\,s \\
+      LogEI & 3.17\,s \\
+      LogNEI & 4.56\,s \\
+      UCB & 3.02\,s \\
+      UCB(beta=2.0) & 3.01\,s \\
+      PES & 4.66\,s \\
+      MES & 4.11\,s \\
+      GIBBON & 3.49\,s \\
+      JES & 3.75\,s \\
+      GIBBON(q=10) & 49.8\,s \\
+      GIBBON(q=5) & 18.2\,s \\
+      LogNEI(q=10) & 1.79\,min \\
+      LogNEI(q=5) & 19.2\,s \\
+      MES(q=10) & 16.1\,s \\
+      MES(q=5) & 9.44\,s \\
+      RANDOM(q=10) & 0.00542\,s \\
+      RANDOM(q=5) & 0.00596\,s \\
       \midrule
       \multicolumn{2}{l}{\textit{DM-MO}} \\
       \cmidrule{1-2}
-      RANDOM & 0.0246\,s \\
-      TSEMO & 2.35\,s \\
-      NSGA2(pop\_size=50) & 8.78\,s \\
-      ParEGO & 4.65\,s \\
-      ParEGO(q=5) & 19.3\,s \\
-      NEHVI & 1.35\,min \\
-      NEHVI(q=5) & 6.33\,min \\
-      PES\_MO & 16.6\,s \\
-      MES\_MO & 9.14\,s \\
-      MES\_MO(q=5) & 53\,s \\
-      JES\_MO & 12.8\,s \\
+      RANDOM & 0.0202\,s \\
+      TSEMO & 2.02\,s \\
+      NSGA-II(pop\_size=50) & 1.2\,s \\
+      ParEGO & 3.15\,s \\
+      NEHVI & 11.2\,s \\
+      PES\_MO & 31\,s \\
+      MES\_MO & 4.68\,s \\
+      JES\_MO & 6.24\,s \\
+      MES\_MO(q=5) & 12.8\,s \\
+      NEHVI(q=5) & 4.82\,min \\
+      ParEGO(q=5) & 14.7\,s \\
+      RANDOM(q=5) & 0.0422\,s \\
       \midrule
       \multicolumn{2}{l}{\textit{DM-Het}} \\
       \cmidrule{1-2}
-      RANDOM & 0.00541\,s \\
-      TS & 2.03\,s \\
-      KG & 25.2\,s \\
-      LogEI & 3.44\,s \\
-      LogNEI & 6.59\,s \\
-      LogNEI+KN & 5.98\,s \\
-      LogNEI+MLHGP(em=5) & 7.69\,s \\
+      RANDOM & 0.00596\,s \\
+      TS & 1.79\,s \\
+      KG & 21.9\,s \\
+      LogEI & 3.26\,s \\
+      LogNEI & 4.25\,s \\
+      LogNEI+KN & 4.28\,s \\
+      LogNEI+MLHGP(em=5) & 5.46\,s \\
       UCB & 2.96\,s \\
-      UCB(beta=2.0) & 3.38\,s \\
-      PES & 4.38\,s \\
-      MES & 3.11\,s \\
-      GIBBON & 2.92\,s \\
-      JES & 4.42\,s \\
+      UCB(beta=2.0) & 3\,s \\
+      PES & 4.6\,s \\
+      MES & 3.72\,s \\
+      GIBBON & 3.52\,s \\
+      JES & 3.73\,s \\
+      UCB(beta=1.0) & 3.01\,s \\
       \bottomrule
     \end{tabular}
   \end{subtable}

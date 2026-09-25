@@ -1,0 +1,86 @@
+# Plot config for plot_results.py -- PCO64 (parallelism configuration, 64 GPUs).
+# Usage: python -m bolt_exp.plot_results results/pco64/*.json --config plot_configs/pco64_okabe_ito.yaml --out pco64.pdf
+#
+# Labels are what _method_label() in plot_results.py produces from `acq_fn`.
+# Both EI variants are built with `constraints=`, hence the C; `+prior` is the
+# physics-informed GP mean (communication-cost model for throughput, peak-memory
+# model for the constraint) rather than a different acquisition.
+#
+# Colour follows the method, linestyle the variant within it: each `+prior` run
+# is dashed in its own acquisition's hue, so the pair reads as one comparison.
+#
+# linestyle options: solid | dashed | dotted | dashdot | [on_px, off_px, ...]
+
+title: "PCO64"
+figsize: [5, 2.8]
+save_legend: True
+skip_unlisted: True
+# Faint CI band: 15 overlapping bands at the default 0.15 bury the means.
+ci_alpha: 0.1
+
+
+methods:
+
+  - label: RANDOM
+    color: "#000000"
+    linestyle: dotted
+
+  - label: cTS
+    color: "#000000"
+    linestyle: solid
+
+  - label: dSCBO
+    color: "#000000"
+    linestyle: dashed
+
+  # Non-BO baselines (Optuna), sharing a hue as the pair of model-free samplers.
+  - label: TPE
+    color: "#E69F00"
+    linestyle: solid
+
+  - label: CMAES
+    color: "#E69F00"
+    linestyle: dashed
+
+  - label: LogEIC
+    color: "#56B4E9"
+    linestyle: solid
+
+  - label: LogNEIC
+    color: "#009E73"
+    linestyle: solid
+
+  # Physics-informed GP means (--prior_mean): same acquisition, different model,
+  # so each keeps its family colour, sits next to the run it is compared with,
+  # and is distinguished by a dashed line.
+  - label: LogNEIC+prior
+    color: "#009E73"
+    linestyle: dashed
+
+  - label: UCB-C
+    color: "#F0E442"
+    linestyle: solid
+
+  - label: UCB-C+prior
+    color: "#F0E442"
+    linestyle: dashed
+
+  - label: cKG
+    color: "#0072B2"
+    linestyle: solid
+
+  - label: cKG+prior
+    color: "#0072B2"
+    linestyle: dashed
+
+  - label: ADMMBO
+    color: "#D55E00"
+    linestyle: solid
+
+  - label: ADMMBO+prior
+    color: "#D55E00"
+    linestyle: dashed
+
+  - label: CMES-IBO
+    color: "#CC79A7"
+    linestyle: solid

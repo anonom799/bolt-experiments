@@ -2,7 +2,7 @@
 # Color encodes method (Okabe-Ito, matching dm_okabe_ito.yaml); linestyle encodes cost_scale.
 #   solid=0.005, dashed=0.01, dotted=0.05
 # Usage:
-#   python plot_results.py $(ls results/hpo/hpo_fd_step_*_50iterations*cost*.json) \
+#   python -m bolt_exp.plot_results $(ls results/hpo/hpo_fd_step_*_50iterations*cost*.json) \
 #     --config plot_configs/hpo_step_cost_scale_okabe_ito.yaml \
 #     --out hpo_step_cost_simple.png --metric log_simple_regret_all \
 #     --budget --cost-scale-label
